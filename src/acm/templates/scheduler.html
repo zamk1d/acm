@@ -3,11 +3,23 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Studio</a>
+    <div class="row" style="margin-bottom:.5rem;gap:.25rem">
+      {% if return_url %}
+      <a href="{{ return_url }}" class="btn btn-ghost btn-sm" style="padding-left:0">← Back to creative studio</a>
+      {% endif %}
+      <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm"{% if not return_url %} style="padding-left:0"{% endif %}>← Studio</a>
+    </div>
     <h1>Auto-publishing</h1>
     <p>Send queued videos to TikTok automatically on your schedule.</p>
   </div>
 </div>
+
+{% if return_url %}
+<div class="alert" style="background:var(--surface-2);border-color:var(--border);color:var(--text-muted)">
+  You came from the creative studio. <strong>Save plan</strong> sends you back there with your fragments,
+  titles and trim exactly as you left them.
+</div>
+{% endif %}
 
 <div class="card">
   <h2 style="margin-bottom:1rem">Plan</h2>
@@ -56,7 +68,7 @@
 </div>
 
 <div class="card mt-2">
-  <h2 style="margin-bottom:1rem">Queue ({{ queue|length }})</h2>
+  <h2 style="margin-bottom:1rem">Queue ({{ queue|length }}<span id="pending-count"></span>)</h2>
   {% if queue %}
     <ol style="padding-left:1.25rem">
       {% for v in queue %}
@@ -69,6 +81,13 @@
   {% else %}
     <p class="dim">Queue is empty. Add drafts from the workspace below.</p>
   {% endif %}
+
+  <div id="pending-box" hidden>
+    <hr class="divider">
+    <h3 style="margin-bottom:.25rem">From the creative studio <span class="badge">not saved yet</span></h3>
+    <p class="dim text-sm">These fragments join the queue, after the videos above, when you save in the creative studio.</p>
+    <ol id="pending-list" start="{{ queue|length + 1 }}" style="padding-left:1.25rem;margin:0"></ol>
+  </div>
 
   {% set addable = workspace | selectattr('status', 'in', ['draft', 'failed']) | list %}
   {% if addable %}
@@ -86,6 +105,22 @@
 <script>
 (function () {
   const ACCOUNT_ID = {{ account_id }};
+  const RETURN_URL = {{ return_url|tojson }};  // null unless we came from the creative studio
+
+  // Fragments the creative studio is about to queue (it stores their titles before navigating here)
+  let pending = [];
+  if (RETURN_URL) {
+    try {
+      const raw = JSON.parse(sessionStorage.getItem(`acm_pending:${ACCOUNT_ID}`) || '[]');
+      pending = Array.isArray(raw) ? raw.filter(t => typeof t === 'string') : [];
+    } catch (_) {}
+  }
+  if (pending.length) {
+    const list = document.getElementById('pending-list');
+    pending.forEach(t => { const li = document.createElement('li'); li.textContent = t; list.appendChild(li); });
+    document.getElementById('pending-box').hidden = false;
+    document.getElementById('pending-count').textContent = ` + ${pending.length} pending`;
+  }
 
   function _detail(data) {
     const d = data && data.detail;
@@ -119,6 +154,7 @@
         const d = await r.json().catch(() => ({}));
         throw new Error(_detail(d) || ('HTTP ' + r.status));
       }
+      if (RETURN_URL) { window.location.href = RETURN_URL; return; }
       alert('Saved.');
     } catch (e) {
       alert('Save failed: ' + e.message);
@@ -130,7 +166,7 @@
       const r = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/schedule/preview`, {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify(readForm()),
+        body: JSON.stringify({ ...readForm(), pending_titles: pending }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -138,8 +174,13 @@
       }
       const data = await r.json();
       document.getElementById('preview').hidden = false;
-      document.getElementById('preview-slots').innerHTML =
-        data.slots.map(s => `<li>${s.local} → ${s.video_title || '—'}</li>`).join('');
+      // textContent, not innerHTML: titles can come from YouTube
+      const ul = document.getElementById('preview-slots');
+      ul.replaceChildren(...data.slots.map(s => {
+        const li = document.createElement('li');
+        li.textContent = `${s.local} → ${s.video_title || '—'}${s.pending ? ' (not saved yet)' : ''}`;
+        return li;
+      }));
       document.getElementById('preview-warnings').textContent = (data.warnings || []).join(' · ');
     } catch (e) {
       alert('Preview failed: ' + e.message);

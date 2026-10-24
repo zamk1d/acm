@@ -11,13 +11,18 @@
 
 <div class="creative-layout">
   <div class="creative-video-col">
-    <div class="video-player-wrap">
+    <div class="video-player-wrap" id="player-frame">
       {% if video %}
-        <video id="preview-video" class="video-player" controls playsinline preload="metadata"
+        <video id="preview-video" class="video-player" playsinline preload="metadata"
                src="/studio/{{ account_id }}/files/{{ video.file_name }}"></video>
       {% else %}
-        <video id="preview-video" class="video-player" controls playsinline preload="metadata"></video>
+        <video id="preview-video" class="video-player" playsinline preload="metadata"></video>
       {% endif %}
+    </div>
+    <div class="player-bar">
+      <button class="btn btn-sm" id="play-btn" type="button" aria-label="Play / pause" style="min-width:2.4rem">▶</button>
+      <input type="range" id="seek-range" min="0" max="1000" step="1" value="0" aria-label="Seek" style="flex:1;min-width:0">
+      <span class="dim text-sm mono" id="time-label">0:00.0</span>
     </div>
     <div class="video-meta">
       <span class="badge">
@@ -78,7 +83,7 @@
       <p class="dim text-sm" style="margin:.35rem 0 .75rem">
         Saved videos go straight into the auto-publish queue instead of drafts.
       </p>
-      <a class="btn btn-sm" href="/studio/{{ account_id }}/schedule">Scheduler settings</a>
+      <a class="btn btn-sm" id="sched-link" href="/studio/{{ account_id }}/schedule">Scheduler settings</a>
     </div>
   </div>
 </div>
@@ -129,17 +134,24 @@
   }
   @media (max-width: 800px) { .creative-layout { grid-template-columns: 1fr; } }
   .creative-video-col { display: flex; flex-direction: column; gap: .75rem; }
+  /* The frame always has the ratio of the OUTPUT video (--ar set from JS), so the preview
+     is exactly what will be rendered: 9:16 with bars/zoom, or the original ratio. */
   .video-player-wrap {
+    --ar: 0.5625;
     background: #000;
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);
     overflow: hidden;
-    aspect-ratio: 9 / 16;
-    max-height: 70vh;
+    aspect-ratio: var(--ar);
+    width: min(100%, calc(70vh * var(--ar)));
     margin: 0 auto;
-    width: 100%;
   }
-  .video-player { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+  .video-player {
+    width: 100%; height: 100%; object-fit: contain; display: block; background: #000;
+    transform-origin: center; cursor: pointer;
+  }
+  .player-bar { display: flex; align-items: center; gap: .6rem; }
+  .player-bar input[type="range"] { accent-color: var(--accent); }
   .video-meta { display: flex; flex-wrap: wrap; gap: .5rem; }
   .creative-form-col .card { position: sticky; top: 5rem; }
 
@@ -250,12 +262,14 @@
   const aspectInfo = $('aspect-info'), arMini = $('ar-mini'), arPic = $('ar-pic');
   const tlTrack = $('tl-track'), tlPlayhead = $('tl-playhead'), tlTotal = $('tl-total');
   const rowsEl = $('frag-rows'), summaryEl = $('frag-summary');
+  const frameEl = $('player-frame'), playBtn = $('play-btn'), seekRange = $('seek-range');
+  const timeLabel = $('time-label'), schedLink = $('sched-link');
 
   let currentFile = null, currentBlobUrl = null, savedId = null;
   let duration = 0;
   let bounds = [];   // ascending boundary times, length = fragments + 1 (bounds[0] = trim start)
   let frags = [];    // [{enabled: bool, title: string|null}]  title null = auto name
-  let ready = false, busy = false, playUntil = null;
+  let ready = false, busy = false, playUntil = null, finished = false;
 
   // ── helpers ─────────────────────────────────────────
   function _detail(data) {
@@ -348,14 +362,22 @@
     zoomRow.hidden = m !== 'zoom';
     zoomLabel.textContent = zoomRange.value + '%';
     arMini.hidden = m === 'original';
-    if (m === 'original') { aspectInfo.textContent = 'Keeps the original frame and ratio.'; return; }
     const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
-    if (!vw || !vh) { aspectInfo.textContent = 'Output 1080×1920 (9:16).'; return; }
-    // same maths as the server: scale to height h, crop sides to 1080, pad top/bottom to 1920
+    if (m === 'original') {
+      aspectInfo.textContent = 'Keeps the original frame and ratio.';
+      frameEl.style.setProperty('--ar', vw && vh ? (vw / vh).toFixed(4) : '0.5625');
+      videoEl.style.transform = '';
+      return;
+    }
+    frameEl.style.setProperty('--ar', '0.5625');   // the player becomes a 9:16 screen
+    if (!vw || !vh) { videoEl.style.transform = ''; aspectInfo.textContent = 'Output 1080×1920 (9:16).'; return; }
+    // same maths as the server: scale to height h, crop sides to 1080, pad top/bottom to 1920.
+    // In the 9:16 frame the video is shown "contained" (height hfit), so zooming = scaling by h/hfit.
     const a = vw / vh, t = aspectOptions().zoom;
     const hfit = Math.min(1080 / a, 1920), h = hfit * (1 - t) + 1920 * t;
     const kept = Math.min(1, 1080 / (h * a)) * 100;
     const bars = Math.max(0, (1920 - h) / 2 / 1920 * 100);
+    videoEl.style.transform = h / hfit > 1.001 ? `scale(${(h / hfit).toFixed(4)})` : '';
     arPic.style.height = Math.min(h / 1920, 1) * 100 + '%';
     aspectInfo.textContent = `Output 1080×1920. Keeps ${kept.toFixed(0)}% of the width; `
       + (bars > 0.5 ? `black bars ${bars.toFixed(0)}% of the height at top and bottom.` : 'no black bars.');
@@ -382,10 +404,15 @@
   function splitEvenly(n) {
     n = Math.round(n) || 1;
     n = clamp(n, 1, Math.max(1, Math.min(MAX_FRAGMENTS, Math.floor(duration / MIN_GAP))));
-    bounds = Array.from({ length: n + 1 }, (_, i) =>
-      i === n ? duration : Math.round(duration * i / n * 100) / 100);
-    frags = Array.from({ length: n }, () => ({ enabled: true, title: null }));
-    countInput.value = n;
+    setModel(
+      Array.from({ length: n + 1 }, (_, i) =>
+        i === n ? duration : Math.round(duration * i / n * 100) / 100),
+      Array.from({ length: n }, () => ({ enabled: true, title: null })));
+  }
+  function setModel(newBounds, newFrags) {
+    bounds = newBounds;
+    frags = newFrags;
+    countInput.value = frags.length;
     buildRows();
     buildTimeline();
     refresh();
@@ -548,8 +575,26 @@
     e.preventDefault();
   });
 
+  // Own controls: native ones would be scaled and clipped by the zoom preview.
+  const togglePlay = () => { videoEl.paused ? videoEl.play().catch(() => {}) : videoEl.pause(); };
+  playBtn.addEventListener('click', togglePlay);
+  videoEl.addEventListener('click', togglePlay);
+  videoEl.addEventListener('play', () => { playBtn.textContent = '⏸'; });
+  videoEl.addEventListener('pause', () => { playBtn.textContent = '▶'; });
+  let seeking = false;
+  seekRange.addEventListener('input', () => {
+    if (!duration) return;
+    seeking = true;
+    videoEl.currentTime = seekRange.value / 1000 * duration;
+  });
+  seekRange.addEventListener('change', () => { seeking = false; });
+
   videoEl.addEventListener('timeupdate', () => {
-    if (duration) tlPlayhead.style.left = pct(videoEl.currentTime);
+    if (duration) {
+      tlPlayhead.style.left = pct(videoEl.currentTime);
+      if (!seeking) seekRange.value = videoEl.currentTime / duration * 1000;
+      timeLabel.textContent = fmt(videoEl.currentTime);
+    }
     if (playUntil !== null && videoEl.currentTime >= playUntil) {
       videoEl.pause();
       playUntil = null;
@@ -570,8 +615,7 @@
     if (ready || !isFinite(videoEl.duration) || !videoEl.duration) return;
     duration = videoEl.duration;
     ready = true;
-    updateAspect();
-    splitEvenly(1);
+    if (!restoreState()) { updateAspect(); splitEvenly(1); }
   }
   videoEl.addEventListener('loadedmetadata', onMetadata);
   if (videoEl.readyState >= 1) onMetadata();
@@ -599,6 +643,50 @@
   }
 
   // ── Save / Publish / Drafts ─────────────────────────
+  // ── Keep the work when leaving for the scheduler (or reloading) ─────
+  const stateKey = () => `acm_creative:${ACCOUNT_ID}:${VIDEO_ID ? 'id' + VIDEO_ID : 'tok' + token}`;
+  const pendingKey = `acm_pending:${ACCOUNT_ID}`;
+
+  function saveState() {
+    if (!ready || finished || !bounds.length) return;
+    try {
+      sessionStorage.setItem(stateKey(), JSON.stringify({
+        duration, title: titleInput.value, desc: descInput.value, speed: speed(),
+        aspect: aspectMode(), zoom: zoomRange.value, queue: queueBox.checked, bounds, frags,
+      }));
+      // titles of what "Queue post" would add: the scheduler page shows them as pending
+      const titles = queueBox.checked ? enabledIdx().map(titleOf).filter(Boolean) : [];
+      sessionStorage.setItem(pendingKey, JSON.stringify(titles));
+    } catch (_) {}
+  }
+  function clearState() {
+    try { sessionStorage.removeItem(stateKey()); sessionStorage.removeItem(pendingKey); } catch (_) {}
+  }
+  function restoreState() {
+    let st = null;
+    try { st = JSON.parse(sessionStorage.getItem(stateKey()) || 'null'); } catch (_) {}
+    if (!st || !Array.isArray(st.bounds) || !Array.isArray(st.frags)
+        || st.bounds.length !== st.frags.length + 1 || !st.bounds.every(Number.isFinite)
+        || Math.abs(st.duration - duration) > 0.5) return false;
+    titleInput.value = st.title || '';
+    descInput.value = st.desc || '';
+    updateCounters();
+    syncSpeed(st.speed);
+    const radio = document.querySelector(`input[name="aspect"][value="${st.aspect}"]`);
+    if (radio) radio.checked = true;
+    zoomRange.value = st.zoom;
+    queueBox.checked = !!st.queue;
+    updateAspect();
+    setModel(st.bounds.map(b => clamp(b, 0, duration)),
+             st.frags.map(f => ({ enabled: !!f.enabled, title: typeof f.title === 'string' ? f.title : null })));
+    return true;
+  }
+  window.addEventListener('pagehide', saveState);
+  schedLink.addEventListener('click', saveState);
+  // the scheduler page sends you back here when you save the plan
+  schedLink.href = `/studio/${ACCOUNT_ID}/schedule?return=`
+    + encodeURIComponent(window.location.pathname + window.location.search);
+
   function buildOptions() {
     return {
       fragments: frags.map((f, i) => ({
@@ -667,12 +755,14 @@
         });
       } catch (e) {
         // the draft already exists; leave the page so a retry doesn't create a duplicate
+        finished = true; clearState();
         showStatus('Saved as a draft, but publishing failed: ' + e.message, 'error');
         setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 2500);
         return;
       }
     }
     const n = ids.length;
+    finished = true; clearState();
     showStatus(
       asPublish ? 'Publishing started. Redirecting…'
         : queueBox.checked ? `${n} video${n > 1 ? 's' : ''} queued. Redirecting…`
@@ -704,6 +794,7 @@
 
   cancelBtn.addEventListener('click', async (e) => {
     e.preventDefault();
+    finished = true; clearState();
     if (savedId) { try { await deleteFile(savedId); } catch (_) {} }
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     window.location.href = `/studio/${ACCOUNT_ID}`;

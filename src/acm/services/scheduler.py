@@ -84,10 +84,20 @@ class SchedulerService:
             return PlanRead.model_validate(plan)
 
     async def preview(
-        self, user_id: uuid.UUID, account_id: int, request: PlanRequest
+        self,
+        user_id: uuid.UUID,
+        account_id: int,
+        request: PlanRequest,
+        pending_titles: list[str] | None = None,
     ) -> SchedulePreview:
-        """What the plan would do, without saving it: next slots and which video takes each."""
+        """What the plan would do, without saving it: next slots and which video takes each.
+
+        `pending_titles` are videos that will be queued right after the saved queue (fragments
+        the user is still editing in the creative studio).
+        """
         queue = await self.list_queue(user_id, account_id)
+        pending = [t[:255] for t in (pending_titles or [])]
+        titles = [v.title for v in queue] + pending
         spec = _spec(request)
         tz = ZoneInfo(request.timezone)
         slots = upcoming_slots(spec, self._clock(), PREVIEW_SLOTS)
@@ -101,22 +111,23 @@ class SchedulerService:
             )
         if not slots:
             warnings.append("No slots match these settings.")
-        if not queue:
+        if not titles:
             warnings.append("The queue is empty: nothing will be posted until you add videos.")
 
         days_active = max(len(request.weekdays), 1) / 7 * per_day
-        lasts = len(queue) / days_active if days_active and queue else None
+        lasts = len(titles) / days_active if days_active and titles else None
         return SchedulePreview(
             slots=[
                 SlotPreview(
                     at=slot,
                     local=slot.astimezone(tz).strftime("%a %d %b, %H:%M"),
-                    video_title=queue[i].title if i < len(queue) else None,
+                    video_title=titles[i] if i < len(titles) else None,
+                    pending=len(queue) <= i < len(titles),
                 )
                 for i, slot in enumerate(slots)
             ],
             posts_per_day=per_day,
-            queue_size=len(queue),
+            queue_size=len(titles),
             queue_lasts_days=math.ceil(lasts) if lasts else None,
             warnings=warnings,
         )
@@ -224,4 +235,3 @@ class SchedulerService:
             if video is None:
                 raise VideoNotFoundError()
             return VideoRead.model_validate(video)
-

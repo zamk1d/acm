@@ -65,10 +65,17 @@ class PlanRead(PlanRequest):
         return value
 
 
+class PreviewRequest(PlanRequest):
+    """Preview = plan settings + titles of videos that are about to be queued but not saved yet."""
+
+    pending_titles: list[str] = Field(default_factory=list, max_length=50)
+
+
 class SlotPreview(BaseModel):
     at: dt.datetime  # UTC
     local: str  # human readable, in the plan's timezone
     video_title: str | None = None  # which queued video will go out in this slot
+    pending: bool = False  # the video isn't saved yet (comes from the creative studio)
 
 
 class SchedulePreview(BaseModel):

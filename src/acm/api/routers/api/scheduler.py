@@ -1,7 +1,7 @@
 from fastapi import APIRouter, status
 
 from acm.api.deps import CurrentUserId, SchedulerDep
-from acm.schemas.schedule import PlanRead, PlanRequest, QueueOrder, SchedulePreview
+from acm.schemas.schedule import PlanRead, PlanRequest, PreviewRequest, QueueOrder, SchedulePreview
 from acm.schemas.video import VideoRead
 
 router = APIRouter(prefix="/accounts/{account_id}/schedule", tags=["Scheduler"])
@@ -23,9 +23,9 @@ async def save_plan(
 
 @router.post("/preview", response_model=SchedulePreview, summary="Preview upcoming slots")
 async def preview(
-    account_id: int, user_id: CurrentUserId, scheduler: SchedulerDep, body: PlanRequest
+    account_id: int, user_id: CurrentUserId, scheduler: SchedulerDep, body: PreviewRequest
 ) -> SchedulePreview:
-    return await scheduler.preview(user_id, account_id, body)
+    return await scheduler.preview(user_id, account_id, body, pending_titles=body.pending_titles)
 
 
 @router.get("/queue", response_model=list[VideoRead], summary="List queued videos")
