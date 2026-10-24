@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ACM{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; line-height: 1.5; }
+    .card { border: 1px solid #8884; border-radius: 12px; padding: 1.5rem; }
+    .btn { display: inline-block; padding: .6rem 1.1rem; border-radius: 8px; border: 1px solid #8886;
+           background: transparent; color: inherit; font: inherit; cursor: pointer; text-decoration: none; }
+    .btn.primary { background: #111; color: #fff; border-color: #111; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: 1rem; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
+    dt { opacity: .7; }
+    img.avatar { width: 72px; height: 72px; border-radius: 50%; }
+  </style>
+</head>
+<body>{% block content %}{% endblock %}</body>
+</html>

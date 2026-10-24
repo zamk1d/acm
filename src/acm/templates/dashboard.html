@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · ACM{% endblock %}
+{% block content %}
+<div class="card">
+  {% if account.avatar_url %}<img class="avatar" src="{{ account.avatar_url }}" alt="avatar" referrerpolicy="no-referrer">{% endif %}
+  <h1>{{ account.display_name or "TikTok user" }}</h1>
+  <dl>
+    <dt>open_id</dt><dd>{{ account.open_id }}</dd>
+    <dt>scopes</dt><dd>{{ account.scopes | join(", ") }}</dd>
+    <dt>access token until</dt><dd>{{ account.access_token_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
+    <dt>refresh token until</dt><dd>{{ account.refresh_token_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
+  </dl>
+  <div class="row">
+    <form method="post" action="/auth/tiktok/refresh"><button class="btn" type="submit">Refresh token</button></form>
+    <form method="post" action="/auth/logout"><button class="btn" type="submit">Log out</button></form>
+    <form method="post" action="/auth/tiktok/disconnect"><button class="btn" type="submit">Disconnect &amp; revoke</button></form>
+  </div>
+</div>
+{% endblock %}
