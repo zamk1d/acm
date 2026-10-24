@@ -53,4 +53,109 @@
   </div>
 </div>
 {% endif %}
+
+<div class="card mt-2" id="telegram-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap">
+    <div>
+      <h2 style="margin:0 0 .25rem">Telegram notifications</h2>
+      <p class="dim text-sm" style="margin:0" id="tg-status">Checking…</p>
+    </div>
+    <div class="row">
+      <a class="btn btn-sm" id="tg-bot-link" target="_blank" rel="noopener" hidden>Open bot ↗</a>
+      <button class="btn btn-sm" id="tg-test" type="button" hidden>Send test</button>
+      <button class="btn btn-sm btn-danger" id="tg-disconnect" type="button" hidden>Unlink</button>
+    </div>
+  </div>
+
+  <div id="tg-form" hidden style="margin-top:1rem">
+    <ol class="dim text-sm" style="padding-left:1.25rem;margin:0 0 .75rem">
+      <li>Open the bot in Telegram: <a id="tg-bot-open" target="_blank" rel="noopener" style="color:var(--accent-2)">@…</a></li>
+      <li>Send <code>/start</code> — the bot will reply with your chat ID.</li>
+      <li>Paste the chat ID below.</li>
+    </ol>
+    <label class="field">
+      <span>Telegram chat ID</span>
+      <input class="input" id="tg-chat-id" type="text" placeholder="e.g. 123456789"
+             autocomplete="off">
+    </label>
+    <button class="btn btn-primary btn-sm" id="tg-connect" type="button">Connect</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const statusEl = $('tg-status'), formEl = $('tg-form'), inputEl = $('tg-chat-id');
+  const testBtn = $('tg-test'), disconnectBtn = $('tg-disconnect');
+  const botLink = $('tg-bot-link'), botOpen = $('tg-bot-open');
+
+  function render(data) {
+    if (data.connected) {
+      statusEl.textContent = `Connected · chat ${data.chat_id}`;
+      formEl.hidden = true;
+      testBtn.hidden = false;
+      disconnectBtn.hidden = false;
+    } else {
+      statusEl.textContent = 'Not connected. Link a chat to get a message when a video lands in TikTok drafts.';
+      formEl.hidden = false;
+      testBtn.hidden = true;
+      disconnectBtn.hidden = true;
+    }
+    if (data.bot_link) {
+      botLink.href = data.bot_link;
+      botLink.textContent = `Open @${data.bot_username} ↗`;
+      botLink.hidden = false;
+      botOpen.href = data.bot_link;
+      botOpen.textContent = `@${data.bot_username}`;
+    } else {
+      botLink.hidden = true;
+      botOpen.textContent = '@bot (not configured)';
+      botOpen.removeAttribute('href');
+    }
+  }
+
+  async function api(url, init) {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json', ...((init && init.headers) || {}) },
+      ...init,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data.detail && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))) || `HTTP ${res.status}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  async function refresh() {
+    try { render(await api('/api/v1/auth/telegram')); }
+    catch (e) { statusEl.textContent = 'Could not load Telegram status: ' + e.message; }
+  }
+
+  $('tg-connect').addEventListener('click', async () => {
+    const chatId = inputEl.value.trim();
+    if (!chatId) return;
+    try {
+      render(await api('/api/v1/auth/telegram', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId }),
+      }));
+    } catch (e) { alert('Connect failed: ' + e.message); }
+  });
+
+  testBtn.addEventListener('click', async () => {
+    try { await api('/api/v1/auth/telegram/test', { method: 'POST' }); alert('Test message sent.'); }
+    catch (e) { alert('Test failed: ' + e.message); }
+  });
+
+  disconnectBtn.addEventListener('click', async () => {
+    if (!confirm('Unlink Telegram?')) return;
+    try { await api('/api/v1/auth/telegram', { method: 'DELETE' }); render({ connected: false }); }
+    catch (e) { alert('Unlink failed: ' + e.message); }
+  });
+
+  refresh();
+})();
+</script>
 {% endblock %}

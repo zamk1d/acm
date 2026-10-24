@@ -83,6 +83,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
          tiktok_client=app.state.tiktok_client,
          storage=app.state.file_storage,
          settings=settings,
+         http=http,
      )
 
      worker = asyncio.create_task(worker_loop(app.state.services))

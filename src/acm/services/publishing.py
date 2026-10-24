@@ -41,6 +41,7 @@ from acm.integrations.tiktok.scopes import SCOPE_VIDEO_PUBLISH, SCOPE_VIDEO_UPLO
 from acm.models.video import STARTABLE_STATUSES, VideoStatus
 from acm.schemas.publishing import PublishMethod, PublishOptions
 from acm.schemas.video import VideoRead
+from acm.services.notifier import TelegramNotifier
 from acm.services.tiktok import TikTokService
 from acm.storage import FileStorage
 
@@ -76,6 +77,7 @@ class PublishingService:
         tiktok: TikTokClient,
         accounts: TikTokService,
         storage: FileStorage,
+        notifier: TelegramNotifier,
         clock: Callable[[], datetime] = utcnow,
     ) -> None:
         self._uow_factory = uow_factory
@@ -83,6 +85,7 @@ class PublishingService:
         self._accounts = accounts
         self._storage = storage
         self._clock = clock
+        self._notifier = notifier
         self._tasks: set[asyncio.Task[None]] = set()
 
     @property
@@ -251,7 +254,6 @@ class PublishingService:
     # --- state transitions -----------------------------------------------------------------
 
     async def _complete(self, video_id: int, status: VideoStatus, tiktok: TikTokPostStatus) -> None:
-        """TikTok has the video: record the result and delete our copy of the file."""
         async with self._uow_factory() as uow:
             video = await uow.videos.get(video_id)
             if video is None:
@@ -264,9 +266,19 @@ class PublishingService:
             video.published_at = self._clock()
             if tiktok.publicaly_available_post_id:
                 video.tiktok_video_id = str(tiktok.publicaly_available_post_id[0])
+            account = await uow.tiktok_accounts.get(video.account_id)
             await uow.commit()
+
         if file_name:
             await self._storage.delete(file_name)
+
+        # ← уведомление только для черновиков
+        if status == VideoStatus.INBOX and account is not None:
+            async with self._uow_factory() as uow:
+                user = await uow.users.get(account.user_id)
+            if user is not None:
+                await self._notifier.draft_uploaded(user.telegram_chat_id, video)
+
         logger.info("Video delivered video_id=%s status=%s", video_id, status.value)
 
     async def fail_video(self, video_id: int, message: str) -> None:

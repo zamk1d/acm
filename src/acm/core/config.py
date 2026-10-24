@@ -21,7 +21,10 @@ class Settings(BaseSettings):
 
     # database
     database_url: str
-
+    telegram_bot_token: SecretStr | None = None
+    telegram_enabled: bool = True
+    # Optional: set the bot's @username directly to skip the getMe call. No "@", just the name.
+    telegram_bot_username: str | None = "ACMShedulerBot"
     # TikTok Login Kit
     tiktok_client_key: str
     tiktok_client_secret: SecretStr
