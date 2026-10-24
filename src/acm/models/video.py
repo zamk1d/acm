@@ -8,6 +8,7 @@ from acm.db.base import Base, TimestampMixin
 
 
 class VideoStatus(StrEnum):
+    DOWNLOADING = "downloading"  # импорт с YouTube идёт в фоне
     DRAFT = "draft"           # загружено, ещё не отправлено
     QUEUED = "queued"         # стоит в очереди планировщика
     PUBLISHING = "publishing" # идёт загрузка/публикация
@@ -20,6 +21,7 @@ class VideoStatus(StrEnum):
 STARTABLE_STATUSES: tuple[VideoStatus, ...] = (VideoStatus.DRAFT, VideoStatus.FAILED)
 # Всё, что видно в рабочей области (не финальные состояния)
 ACTIVE_STATUSES: tuple[VideoStatus, ...] = (
+    VideoStatus.DOWNLOADING,
     VideoStatus.DRAFT,
     VideoStatus.QUEUED,
     VideoStatus.PUBLISHING,

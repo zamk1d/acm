@@ -30,6 +30,68 @@
     </div>
   </div>
   <p id="dropzone-error" class="dropzone-error" hidden></p>
+  {# Вставить в studio.html сразу ПОД dropzone (не внутри него, иначе клик откроет выбор файла). #}
+  {# Вставить в studio.html сразу ПОД dropzone (не внутри него, иначе клик откроет выбор файла). #}
+  <form id="yt-form" class="row" style="margin-top:.75rem;flex-wrap:nowrap">
+    <input class="input" id="yt-url" type="url" required
+           placeholder="…or paste a YouTube link" aria-label="YouTube link">
+    <button class="btn btn-primary" id="yt-btn" type="submit">Apply</button>
+  </form>
+  <div id="yt-error" class="alert alert-error" hidden style="margin-top:.5rem"></div>
+
+  <script>
+  (function () {
+    const API = '/api/v1/accounts/{{ account_id }}/videos';
+    const form = document.getElementById('yt-form');
+    const btn = document.getElementById('yt-btn');
+    const err = document.getElementById('yt-error');
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const detail = (d) => Array.isArray(d) ? d.map(x => x.msg).join('; ') : d;
+
+    async function call(url, init) {
+      const res = await fetch(url, { credentials: 'same-origin', ...init,
+        headers: { 'Accept': 'application/json', ...((init && init.headers) || {}) } });
+      const data = res.status === 204 ? null : await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(detail(data && data.detail) || `HTTP ${res.status}`);
+      return data;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.hidden = true;
+      btn.disabled = true;
+      btn.textContent = 'Starting…';
+      try {
+        // returns immediately: the server downloads in the background
+        const video = await call(API + '/from-url', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: document.getElementById('yt-url').value.trim() }),
+        });
+        for (;;) {
+          const p = await call(`${API}/${video.id}/import`);
+          if (p.status === 'draft') {
+            window.location.href = `/studio/{{ account_id }}/creative?id=${video.id}`;
+            return;
+          }
+          if (p.status === 'failed') {
+            await call(`${API}/${video.id}`, { method: 'DELETE' }).catch(() => {});
+            throw new Error(p.error || 'Download failed');
+          }
+          btn.textContent = p.percent ? `Downloading… ${p.percent}%` : 'Downloading…';
+          await sleep(1000);
+        }
+      } catch (ex) {
+        err.textContent = ex.message;
+        err.hidden = false;
+        btn.disabled = false;
+        btn.textContent = 'Apply';
+      }
+    });
+  })();
+  </script>
+
+{# Статус "downloading" теперь виден в workspace: добавь в CSS рядом с остальными .status-*:
+   .status-downloading { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); } #}
 </div>
 
 <div class="card mt-2">

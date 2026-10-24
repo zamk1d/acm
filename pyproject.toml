@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "sqlalchemy[asyncio]>=2.1.6",
     "uvicorn>=0.54.0",
+    "yt-dlp>=2026.10.21",
 ]
 
 [dependency-groups]

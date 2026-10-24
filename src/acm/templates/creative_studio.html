@@ -5,7 +5,7 @@
   <div>
     <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Studio</a>
     <h1>{{ 'Edit video' if video else 'New video' }}</h1>
-    <p>Trim, change speed, then save or publish.</p>
+    <p>Split into fragments, trim, change speed, then save, queue or publish.</p>
   </div>
 </div>
 
@@ -41,49 +41,83 @@
       </label>
       <label class="field">
         <span>Description <small class="dim" id="desc-counter">0/255</small></span>
-        <textarea class="textarea" id="desc-input" rows="4" maxlength="255"
+        <textarea class="textarea" id="desc-input" rows="3" maxlength="255"
                   placeholder="Describe your video">{{ video.description if video else '' }}</textarea>
       </label>
-
-      <!-- ── Trim & Speed ─────────────────────────── -->
-      <hr class="divider">
-      <h3 style="margin-bottom:.75rem">Trim &amp; Speed</h3>
-
-      <label class="field">
-        <span>Start time <small class="dim" id="start-label">0.0s</small></span>
-        <input type="range" id="start-range" min="0" step="0.1" value="0" style="width:100%">
-        <input class="input" id="start-input" type="number" step="0.1" min="0"
-               style="width:100%;margin-top:.25rem" placeholder="Seconds">
-      </label>
-
-      <label class="field">
-        <span>End time <small class="dim" id="end-label">0.0s</small></span>
-        <input type="range" id="end-range" min="0" step="0.1" value="0" style="width:100%">
-        <input class="input" id="end-input" type="number" step="0.1" min="0"
-               style="width:100%;margin-top:.25rem" placeholder="Seconds">
-      </label>
-
-      <label class="field">
+      <label class="field" style="margin-bottom:0">
         <span>Speed <small class="dim" id="speed-label">1.00x</small></span>
         <input type="range" id="speed-range" min="0.25" max="4" step="0.05" value="1" style="width:100%">
         <input class="input" id="speed-input" type="number" step="0.01" min="0.25" max="4"
                value="1.00" style="width:100%;margin-top:.25rem">
       </label>
 
-      <p class="dim text-sm" style="margin-top:.5rem">
-        Trimmed duration: <span id="trim-duration">0.0s</span>
+      <hr class="divider">
+      <h3 style="margin-bottom:.6rem">Aspect ratio</h3>
+      <div class="aspect-opts">
+        <label><input type="radio" name="aspect" value="original" checked> Original</label>
+        <label><input type="radio" name="aspect" value="fit"> 9:16 · whole frame, black bars</label>
+        <label><input type="radio" name="aspect" value="zoom"> 9:16 · bigger picture, thinner bars</label>
+      </div>
+      <div class="aspect-row">
+        <div class="ar-mini" id="ar-mini" hidden><div class="ar-pic" id="ar-pic"></div></div>
+        <div style="flex:1;min-width:0">
+          <div id="zoom-row" hidden style="margin-bottom:.4rem">
+            <span class="muted text-sm">Zoom <small class="dim" id="zoom-label">50%</small></span>
+            <input type="range" id="zoom-range" min="5" max="100" step="5" value="50" style="width:100%">
+          </div>
+          <p class="dim text-sm" id="aspect-info" style="margin:0">Keeps the original frame and ratio.</p>
+        </div>
+      </div>
+      <p class="dim text-sm" style="margin:.5rem 0 0">Applies to every fragment.</p>
+
+      <hr class="divider">
+      <label class="row" style="gap:.6rem;cursor:pointer;flex-wrap:nowrap">
+        <input type="checkbox" id="queue-box" style="accent-color:var(--accent);width:1rem;height:1rem">
+        <span>Queue post</span>
+      </label>
+      <p class="dim text-sm" style="margin:.35rem 0 .75rem">
+        Saved videos go straight into the auto-publish queue instead of drafts.
       </p>
+      <a class="btn btn-sm" href="/studio/{{ account_id }}/schedule">Scheduler settings</a>
     </div>
   </div>
 </div>
 
-<div id="status" class="alert" hidden></div>
+<!-- ── Fragments ─────────────────────────────────── -->
+<div class="card fragments-card">
+  <div class="frag-head">
+    <div>
+      <h3 style="margin-bottom:.15rem">Fragments</h3>
+      <p class="dim text-sm" id="frag-summary">Waiting for the video…</p>
+    </div>
+    <div class="row" style="flex-wrap:nowrap">
+      <label class="row" style="gap:.5rem;flex-wrap:nowrap">
+        <span class="muted text-sm">Split into</span>
+        <input class="input" id="count-input" type="number" min="1" max="50" value="1" style="width:5rem">
+      </label>
+      <button class="btn btn-sm" id="split-btn" type="button">Split evenly</button>
+    </div>
+  </div>
+
+  <div class="tl-wrap">
+    <div class="tl-track" id="tl-track"><div class="tl-playhead" id="tl-playhead"></div></div>
+    <div class="tl-scale"><span>0:00</span><span id="tl-total">0:00</span></div>
+  </div>
+  <p class="dim text-sm" style="margin-bottom:.5rem">
+    Drag the handles (or focus one and use ← →, Shift for 1 s) to move fragment boundaries.
+    Untick a fragment to skip it.
+  </p>
+
+  <div id="frag-rows"></div>
+</div>
+
+<div id="status" class="alert" hidden style="margin-top:1rem"></div>
 
 <div class="row mt-2" style="justify-content:flex-end;gap:.75rem;flex-wrap:wrap">
   <a class="btn" href="/studio/{{ account_id }}" id="cancel-btn">Cancel</a>
-  <button class="btn" id="save-btn" type="button">Save draft</button>
-  <button class="btn" id="drafts-btn" type="button" {% if not video %}disabled title="Save first, then post to drafts"{% endif %}>Post to drafts</button>
-  <button class="btn btn-primary" id="publish-btn" type="button">Publish</button>
+  <button class="btn" id="save-btn" type="button" disabled>Save draft</button>
+  <button class="btn" id="drafts-btn" type="button" disabled title="Save first, then post to drafts">Post to drafts</button>
+  <button class="btn btn-primary" id="publish-btn" type="button" disabled>Publish</button>
 </div>
 
 <style>
@@ -126,44 +160,104 @@
     border-color: color-mix(in oklab, var(--success) 40%, transparent);
     color: color-mix(in oklab, var(--success) 90%, var(--text));
   }
+
+  .aspect-opts { display: flex; flex-direction: column; gap: .4rem; font-size: .9rem; margin-bottom: .75rem; }
+  .aspect-opts label { display: flex; gap: .5rem; align-items: center; cursor: pointer; }
+  .aspect-opts input { accent-color: var(--accent); }
+  .aspect-row { display: flex; gap: .85rem; align-items: center; }
+  .ar-mini {
+    width: 54px; height: 96px; flex-shrink: 0; background: #000;
+    border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ar-pic { width: 100%; background: linear-gradient(135deg, var(--accent-2), var(--accent)); opacity: .85; }
+
+  /* ── Fragments / timeline ─────────────────── */
+  .fragments-card { margin-top: 1.5rem; }
+  .frag-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+  .tl-wrap { padding: 0 10px; margin: 1.5rem 0 .75rem; }
+  .tl-track {
+    position: relative; height: 44px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer; touch-action: none; user-select: none;
+  }
+  .tl-seg {
+    position: absolute; top: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .75rem; font-weight: 600; color: var(--text);
+    border-left: 1px solid var(--border-strong);
+    overflow: hidden; pointer-events: none;
+    background: color-mix(in oklab, var(--accent-2) 24%, transparent);
+  }
+  .tl-seg:nth-of-type(even) { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+  .tl-seg.off {
+    color: var(--text-dim);
+    background: repeating-linear-gradient(135deg, transparent 0 6px, var(--surface-3) 6px 8px);
+  }
+  .tl-handle {
+    position: absolute; top: -6px; bottom: -6px; width: 14px; margin-left: -7px;
+    background: var(--text); border: 2px solid var(--bg); border-radius: 5px;
+    cursor: ew-resize; touch-action: none; z-index: 2;
+    box-shadow: var(--shadow-sm);
+  }
+  .tl-handle:hover, .tl-handle:focus-visible { background: var(--accent-2); outline: none; }
+  .tl-playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+    background: var(--accent); pointer-events: none; z-index: 1;
+  }
+  .tl-scale { display: flex; justify-content: space-between; margin-top: .35rem; font-size: .75rem; color: var(--text-dim); }
+
+  .frag-row {
+    display: grid;
+    grid-template-columns: auto 1.6rem minmax(0, 1fr) auto;
+    gap: .5rem; align-items: center;
+    padding: .5rem 0; border-top: 1px solid var(--border);
+  }
+  .frag-row.off { opacity: .5; }
+  .frag-row input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem; }
+  .frag-num { color: var(--text-dim); font-size: .8rem; font-weight: 600; text-align: center; }
+  .frag-row .input { padding: .45rem .6rem; font-size: .85rem; }
+  .frag-times { display: flex; gap: .5rem; align-items: center; }
+  .frag-times .input { width: 5.5rem; }
+  @media (max-width: 700px) {
+    .frag-row { grid-template-columns: auto 1.6rem minmax(0, 1fr); }
+    .frag-times { grid-column: 3; }
+  }
 </style>
 
 <script>
 (function () {
   const ACCOUNT_ID = {{ account_id }};
   const VIDEO_ID   = {{ video.id if video else 'null' }};
+  const API = `/api/v1/accounts/${ACCOUNT_ID}`;
   const DB_NAME = 'acm_studio';
   const STORE = 'uploads';
+  const MIN_GAP = 0.2;        // seconds, same as the server's minimum
+  const MAX_FRAGMENTS = 50;
   const token = new URLSearchParams(window.location.search).get('token');
 
-  const videoEl    = document.getElementById('preview-video');
-  const fileNameEl = document.getElementById('file-name');
-  const titleInput = document.getElementById('title-input');
-  const descInput  = document.getElementById('desc-input');
-  const titleCounter = document.getElementById('title-counter');
-  const descCounter  = document.getElementById('desc-counter');
-  const saveBtn    = document.getElementById('save-btn');
-  const publishBtn = document.getElementById('publish-btn');
-  const draftsBtn  = document.getElementById('drafts-btn');
-  const cancelBtn  = document.getElementById('cancel-btn');
-  const statusEl   = document.getElementById('status');
+  const $ = (id) => document.getElementById(id);
+  const videoEl = $('preview-video'), fileNameEl = $('file-name');
+  const titleInput = $('title-input'), descInput = $('desc-input');
+  const titleCounter = $('title-counter'), descCounter = $('desc-counter');
+  const saveBtn = $('save-btn'), publishBtn = $('publish-btn'), draftsBtn = $('drafts-btn');
+  const cancelBtn = $('cancel-btn'), statusEl = $('status'), queueBox = $('queue-box');
+  const speedRange = $('speed-range'), speedInput = $('speed-input'), speedLabel = $('speed-label');
+  const countInput = $('count-input'), splitBtn = $('split-btn');
+  const zoomRange = $('zoom-range'), zoomLabel = $('zoom-label'), zoomRow = $('zoom-row');
+  const aspectInfo = $('aspect-info'), arMini = $('ar-mini'), arPic = $('ar-pic');
+  const tlTrack = $('tl-track'), tlPlayhead = $('tl-playhead'), tlTotal = $('tl-total');
+  const rowsEl = $('frag-rows'), summaryEl = $('frag-summary');
 
-  const startRange = document.getElementById('start-range');
-  const startInput = document.getElementById('start-input');
-  const endRange   = document.getElementById('end-range');
-  const endInput   = document.getElementById('end-input');
-  const speedRange = document.getElementById('speed-range');
-  const speedInput = document.getElementById('speed-input');
-  const startLabel = document.getElementById('start-label');
-  const endLabel   = document.getElementById('end-label');
-  const speedLabel = document.getElementById('speed-label');
-  const trimDurEl  = document.getElementById('trim-duration');
+  let currentFile = null, currentBlobUrl = null, savedId = null;
+  let duration = 0;
+  let bounds = [];   // ascending boundary times, length = fragments + 1 (bounds[0] = trim start)
+  let frags = [];    // [{enabled: bool, title: string|null}]  title null = auto name
+  let ready = false, busy = false, playUntil = null;
 
-  let currentFile = null;
-  let currentBlobUrl = null;
-  let savedId = null;
-  let videoDuration = 0; // seconds
-
+  // ── helpers ─────────────────────────────────────────
   function _detail(data) {
     const d = data && data.detail;
     if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
@@ -175,14 +269,34 @@
     statusEl.hidden = false;
   }
   function hideStatus() { statusEl.hidden = true; }
+  async function request(url, init) {
+    const res = await fetch(url, {
+      credentials: 'same-origin', ...init,
+      headers: { 'Accept': 'application/json', ...((init && init.headers) || {}) },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(_detail(data) || `HTTP ${res.status}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+  const JSON_HEADERS = { 'Content-Type': 'application/json' };
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const pct = (t) => (t / duration * 100) + '%';
+  function fmt(t) {
+    const m = Math.floor(t / 60), s = t - m * 60;
+    return `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+  }
+
   function updateCounters() {
     titleCounter.textContent = `${titleInput.value.length}/255`;
     descCounter.textContent  = `${descInput.value.length}/255`;
   }
-  titleInput.addEventListener('input', updateCounters);
+  titleInput.addEventListener('input', () => { updateCounters(); refresh(); });
   descInput.addEventListener('input', updateCounters);
   updateCounters();
 
+  // ── IndexedDB (create mode, file picked in studio.html) ──
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -209,76 +323,265 @@
     });
   }
 
-  // ── Trim & speed UI ─────────────────────────────────
-  function syncStart(value) {
-    const v = Math.min(parseFloat(value) || 0, videoDuration - 0.1);
-    startRange.value = v;
-    startInput.value = v.toFixed(1);
-    startLabel.textContent = `${v.toFixed(1)}s`;
-    if (parseFloat(endRange.value) <= v) {
-      endRange.value = v + 0.1;
-      endInput.value = (v + 0.1).toFixed(1);
-      endLabel.textContent = `${(v + 0.1).toFixed(1)}s`;
-    }
-    updateTrimDuration();
-  }
-  function syncEnd(value) {
-    const v = Math.min(Math.max(parseFloat(value) || 0, parseFloat(startRange.value) + 0.1), videoDuration);
-    endRange.value = v;
-    endInput.value = v.toFixed(1);
-    endLabel.textContent = `${v.toFixed(1)}s`;
-    updateTrimDuration();
-  }
+  // ── Speed ───────────────────────────────────────────
   function syncSpeed(value) {
-    const v = Math.min(Math.max(parseFloat(value) || 1, 0.25), 4);
+    const v = clamp(parseFloat(value) || 1, 0.25, 4);
     speedRange.value = v;
     speedInput.value = v.toFixed(2);
     speedLabel.textContent = `${v.toFixed(2)}x`;
-    if (videoEl) videoEl.playbackRate = v;
-    updateTrimDuration();
+    videoEl.playbackRate = v;
+    refresh();
   }
-  function updateTrimDuration() {
-    const dur = Math.max(0, parseFloat(endRange.value) - parseFloat(startRange.value));
-    const speed = parseFloat(speedRange.value) || 1;
-    trimDurEl.textContent = `${(dur / speed).toFixed(1)}s`;
-  }
-
-  startRange.addEventListener('input', (e) => syncStart(e.target.value));
-  startInput.addEventListener('input', (e) => syncStart(e.target.value));
-  endRange.addEventListener('input', (e) => syncEnd(e.target.value));
-  endInput.addEventListener('input', (e) => syncEnd(e.target.value));
   speedRange.addEventListener('input', (e) => syncSpeed(e.target.value));
   speedInput.addEventListener('input', (e) => syncSpeed(e.target.value));
+  const speed = () => parseFloat(speedRange.value) || 1;
 
-  function initTrimUI() {
-    if (!videoDuration || !isFinite(videoDuration)) return;
-    startRange.max = videoDuration;
-    endRange.max = videoDuration;
-    endRange.value = videoDuration;
-    endInput.value = videoDuration.toFixed(1);
-    endLabel.textContent = `${videoDuration.toFixed(1)}s`;
-    updateTrimDuration();
+  // ── Aspect ratio ────────────────────────────────────
+  const aspectMode = () => document.querySelector('input[name="aspect"]:checked').value;
+  function aspectOptions() {
+    const m = aspectMode();
+    if (m === 'original') return { aspect: 'original', zoom: 0 };
+    return { aspect: '9:16', zoom: m === 'zoom' ? zoomRange.value / 100 : 0 };
+  }
+  function updateAspect() {
+    const m = aspectMode();
+    zoomRow.hidden = m !== 'zoom';
+    zoomLabel.textContent = zoomRange.value + '%';
+    arMini.hidden = m === 'original';
+    if (m === 'original') { aspectInfo.textContent = 'Keeps the original frame and ratio.'; return; }
+    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+    if (!vw || !vh) { aspectInfo.textContent = 'Output 1080×1920 (9:16).'; return; }
+    // same maths as the server: scale to height h, crop sides to 1080, pad top/bottom to 1920
+    const a = vw / vh, t = aspectOptions().zoom;
+    const hfit = Math.min(1080 / a, 1920), h = hfit * (1 - t) + 1920 * t;
+    const kept = Math.min(1, 1080 / (h * a)) * 100;
+    const bars = Math.max(0, (1920 - h) / 2 / 1920 * 100);
+    arPic.style.height = Math.min(h / 1920, 1) * 100 + '%';
+    aspectInfo.textContent = `Output 1080×1920. Keeps ${kept.toFixed(0)}% of the width; `
+      + (bars > 0.5 ? `black bars ${bars.toFixed(0)}% of the height at top and bottom.` : 'no black bars.');
+  }
+  document.querySelectorAll('input[name="aspect"]').forEach(r => r.addEventListener('change', () => { updateAspect(); refresh(); }));
+  zoomRange.addEventListener('input', () => { updateAspect(); refresh(); });
+
+  // ── Fragment model ──────────────────────────────────
+  const base = () => titleInput.value.trim();
+  const enabledIdx = () => frags.map((f, i) => f.enabled ? i : -1).filter(i => i >= 0);
+
+  // "{base} - {N}/{M}": N = position among INCLUDED fragments, M = how many are included.
+  // With a single included fragment the plain base title is used.
+  function defaultTitle(i) {
+    const en = enabledIdx();
+    if (en.length <= 1) return base();
+    return `${base()} - ${en.indexOf(i) + 1}/${en.length}`;
+  }
+  function titleOf(i) {
+    const f = frags[i];
+    return (f.title !== null ? f.title : defaultTitle(i)).trim().slice(0, 255);
   }
 
-  videoEl.addEventListener('loadedmetadata', () => {
-    videoDuration = videoEl.duration;
-    initTrimUI();
+  function splitEvenly(n) {
+    n = Math.round(n) || 1;
+    n = clamp(n, 1, Math.max(1, Math.min(MAX_FRAGMENTS, Math.floor(duration / MIN_GAP))));
+    bounds = Array.from({ length: n + 1 }, (_, i) =>
+      i === n ? duration : Math.round(duration * i / n * 100) / 100);
+    frags = Array.from({ length: n }, () => ({ enabled: true, title: null }));
+    countInput.value = n;
+    buildRows();
+    buildTimeline();
+    refresh();
+  }
+
+  function moveBound(i, t) {
+    const last = bounds.length - 1;
+    const lo = i > 0 ? bounds[i - 1] + MIN_GAP : 0;
+    const hi = i < last ? bounds[i + 1] - MIN_GAP : duration;
+    let v = clamp(t, lo, hi);
+    if (i === last && v > duration - 0.05) v = duration;
+    else v = clamp(Math.round(v * 10) / 10, lo, hi);
+    bounds[i] = v;
+    refresh();
+  }
+
+  function changed() {
+    return frags.length > 1 || !frags[0].enabled || bounds[0] > 0.05
+      || bounds[bounds.length - 1] < duration - 0.05 || Math.abs(speed() - 1) > 0.001
+      || aspectMode() !== 'original';
+  }
+
+  // ── Rendering ───────────────────────────────────────
+  function buildRows() {
+    rowsEl.innerHTML = '';
+    frags.forEach((_, i) => {
+      const row = document.createElement('div');
+      row.className = 'frag-row';
+      row.innerHTML = `
+        <input type="checkbox" class="frag-on" checked aria-label="Include fragment ${i + 1}">
+        <span class="frag-num">${i + 1}</span>
+        <input class="input frag-title" type="text" maxlength="255" aria-label="Fragment ${i + 1} title">
+        <div class="frag-times">
+          <input class="input frag-start" type="number" step="0.1" min="0" aria-label="Start, seconds">
+          <input class="input frag-end" type="number" step="0.1" min="0" aria-label="End, seconds">
+          <button class="btn btn-sm frag-play" type="button" aria-label="Play fragment ${i + 1}">▶</button>
+        </div>`;
+      const q = (s) => row.querySelector(s);
+      q('.frag-on').addEventListener('change', (e) => { frags[i].enabled = e.target.checked; refresh(); });
+      q('.frag-title').addEventListener('input', (e) => {
+        frags[i].title = e.target.value === '' ? null : e.target.value;
+      });
+      q('.frag-title').addEventListener('change', refresh);
+      q('.frag-start').addEventListener('change', (e) => { moveBound(i, parseFloat(e.target.value) || 0); });
+      q('.frag-end').addEventListener('change', (e) => { moveBound(i + 1, parseFloat(e.target.value) || 0); });
+      q('.frag-play').addEventListener('click', () => {
+        videoEl.currentTime = bounds[i];
+        playUntil = bounds[i + 1];
+        videoEl.play().catch(() => {});
+      });
+      rowsEl.appendChild(row);
+    });
+  }
+
+  function buildTimeline() {
+    tlTrack.querySelectorAll('.tl-seg, .tl-handle').forEach(el => el.remove());
+    frags.forEach((_, i) => {
+      const seg = document.createElement('div');
+      seg.className = 'tl-seg';
+      seg.textContent = i + 1;
+      tlTrack.appendChild(seg);
+    });
+    bounds.forEach((_, i) => {
+      const h = document.createElement('div');
+      h.className = 'tl-handle';
+      h.dataset.i = i;
+      h.tabIndex = 0;
+      h.setAttribute('role', 'slider');
+      h.setAttribute('aria-label', i === 0 ? 'Start' : (i === bounds.length - 1 ? 'End' : `Boundary ${i}`));
+      h.setAttribute('aria-valuemin', 0);
+      h.setAttribute('aria-valuemax', duration.toFixed(1));
+      tlTrack.appendChild(h);
+    });
+    tlTotal.textContent = fmt(duration);
+  }
+
+  function refresh() {
+    if (!bounds.length) return;
+    const segs = tlTrack.querySelectorAll('.tl-seg');
+    const handles = tlTrack.querySelectorAll('.tl-handle');
+    segs.forEach((s, i) => {
+      s.style.left = pct(bounds[i]);
+      s.style.width = ((bounds[i + 1] - bounds[i]) / duration * 100) + '%';
+      s.classList.toggle('off', !frags[i].enabled);
+    });
+    handles.forEach((h, i) => {
+      h.style.left = pct(bounds[i]);
+      h.setAttribute('aria-valuenow', bounds[i].toFixed(1));
+    });
+
+    const active = document.activeElement;
+    Array.from(rowsEl.children).forEach((row, i) => {
+      const f = frags[i];
+      row.classList.toggle('off', !f.enabled);
+      row.querySelector('.frag-on').checked = f.enabled;
+      const ti = row.querySelector('.frag-title');
+      ti.disabled = !f.enabled;
+      ti.placeholder = f.enabled ? '' : 'Excluded';
+      if (active !== ti) ti.value = f.enabled ? (f.title !== null ? f.title : defaultTitle(i)) : (f.title || '');
+      const st = row.querySelector('.frag-start'), en = row.querySelector('.frag-end');
+      if (active !== st) st.value = bounds[i].toFixed(1);
+      if (active !== en) en.value = bounds[i + 1].toFixed(1);
+      row.querySelector('.frag-play').disabled = !f.enabled;
+    });
+
+    const idx = enabledIdx();
+    const total = idx.reduce((s, i) => s + (bounds[i + 1] - bounds[i]) / speed(), 0);
+    summaryEl.textContent = `${idx.length} of ${frags.length} included · total ${total.toFixed(1)}s at ${speed().toFixed(2)}x`;
+    refreshActions();
+  }
+
+  function refreshActions() {
+    const k = enabledIdx().length;
+    const q = queueBox.checked;
+    if (busy) saveBtn.textContent = 'Working…';
+    else if (q) saveBtn.textContent = k > 1 ? `Save & queue ${k}` : 'Save & queue';
+    else saveBtn.textContent = k > 1 ? `Save ${k} drafts` : 'Save draft';
+    saveBtn.disabled = !ready || busy || k === 0;
+    publishBtn.disabled = !ready || busy || k !== 1 || q;
+    publishBtn.title = k > 1 ? 'Publish works with a single fragment. Use Queue post for several.'
+                     : (q ? 'Untick “Queue post” to publish right away' : '');
+    const unsaved = !VIDEO_ID || changed();
+    draftsBtn.disabled = !ready || busy || unsaved;
+    draftsBtn.title = unsaved ? 'Save first, then post to drafts' : '';
+  }
+  queueBox.addEventListener('change', refreshActions);
+
+  // ── Timeline interaction ────────────────────────────
+  let drag = null;
+  const timeAt = (e) => {
+    const r = tlTrack.getBoundingClientRect();
+    return clamp((e.clientX - r.left) / r.width, 0, 1) * duration;
+  };
+  tlTrack.addEventListener('pointerdown', (e) => {
+    if (!ready) return;
+    const h = e.target.closest('.tl-handle');
+    if (h) {
+      drag = +h.dataset.i;
+      h.setPointerCapture(e.pointerId);
+      h.focus();
+      e.preventDefault();
+    } else {
+      videoEl.currentTime = timeAt(e);
+    }
+  });
+  tlTrack.addEventListener('pointermove', (e) => {
+    if (drag === null) return;
+    moveBound(drag, timeAt(e));
+    videoEl.currentTime = bounds[drag];  // scrub the preview while dragging
+  });
+  const endDrag = () => { drag = null; };
+  tlTrack.addEventListener('pointerup', endDrag);
+  tlTrack.addEventListener('pointercancel', endDrag);
+  tlTrack.addEventListener('keydown', (e) => {
+    const h = e.target.closest('.tl-handle');
+    if (!h || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    const i = +h.dataset.i, step = (e.shiftKey ? 1 : 0.1) * (e.key === 'ArrowLeft' ? -1 : 1);
+    moveBound(i, bounds[i] + step);
+    videoEl.currentTime = bounds[i];
+    e.preventDefault();
   });
 
-  // ── Load file ───────────────────────────────────────
-  async function loadCreateMode() {
-    if (!token) {
-      showStatus('File not found. Please upload a video again.', 'error');
-      saveBtn.disabled = true; publishBtn.disabled = true;
-      return;
+  videoEl.addEventListener('timeupdate', () => {
+    if (duration) tlPlayhead.style.left = pct(videoEl.currentTime);
+    if (playUntil !== null && videoEl.currentTime >= playUntil) {
+      videoEl.pause();
+      playUntil = null;
     }
+  });
+
+  function applySplit() {
+    if (!ready) return;
+    if (frags.some(f => f.title !== null || !f.enabled)
+        && !confirm('Reset fragment names and selection?')) return;
+    splitEvenly(parseFloat(countInput.value));
+  }
+  splitBtn.addEventListener('click', applySplit);
+  countInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applySplit(); } });
+
+  // ── Video metadata → initial single fragment ────────
+  function onMetadata() {
+    if (ready || !isFinite(videoEl.duration) || !videoEl.duration) return;
+    duration = videoEl.duration;
+    ready = true;
+    updateAspect();
+    splitEvenly(1);
+  }
+  videoEl.addEventListener('loadedmetadata', onMetadata);
+  if (videoEl.readyState >= 1) onMetadata();
+
+  // ── Load file (create mode) ─────────────────────────
+  async function loadCreateMode() {
+    if (!token) { showStatus('File not found. Please upload a video again.', 'error'); return; }
     try {
       const item = await getFile(token);
-      if (!item || !item.file) {
-        showStatus('Video not found in local storage. Upload again.', 'error');
-        saveBtn.disabled = true; publishBtn.disabled = true;
-        return;
-      }
+      if (!item || !item.file) { showStatus('Video not found in local storage. Upload again.', 'error'); return; }
       currentFile = item.file;
       savedId = token;
       currentBlobUrl = URL.createObjectURL(item.file);
@@ -287,6 +590,7 @@
       if (!titleInput.value) {
         titleInput.value = item.name.replace(/\.[^.]+$/, '').slice(0, 255);
         updateCounters();
+        refresh();
       }
     } catch (e) {
       console.error(e);
@@ -294,97 +598,85 @@
     }
   }
 
-  // ── Save / Publish / Drafts ────────────────────────
-  async function saveMetadata() {
-    const title = titleInput.value.trim();
-    const description = descInput.value.trim();
-    if (!title) {
-      showStatus('Please add a title.', 'error');
-      titleInput.focus();
-      return null;
-    }
-    hideStatus();
+  // ── Save / Publish / Drafts ─────────────────────────
+  function buildOptions() {
+    return {
+      fragments: frags.map((f, i) => ({
+        start: bounds[i], end: bounds[i + 1],
+        title: titleOf(i) || base() || 'Untitled', enabled: f.enabled,
+      })),
+      description: descInput.value.trim(),
+      speed: speed(),
+      queue: queueBox.checked,
+      ...aspectOptions(),
+    };
+  }
 
-    try {
-      if (VIDEO_ID) {
-        const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${VIDEO_ID}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({ title, description }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(_detail(data) || `HTTP ${res.status}`);
-        }
-        return VIDEO_ID;
-      } else {
-        if (!currentFile) throw new Error('No file to upload.');
-        const fd = new FormData();
-        fd.append('title', title);
-        fd.append('description', description);
-        fd.append('file', currentFile, currentFile.name);
-        fd.append('start', startRange.value);
-        fd.append('end', endRange.value);
-        fd.append('speed', speedRange.value);
-        const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/processed`, {
-          method: 'POST',
-          body: fd,
-          credentials: 'same-origin',
-          headers: { 'Accept': 'application/json' },
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(_detail(data) || `HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        await deleteFile(savedId).catch(() => {});
-        savedId = null;
-        return data.id;
-      }
-    } catch (e) {
-      console.error(e);
-      showStatus('Save failed: ' + e.message, 'error');
-      return null;
+  async function persist() {
+    const opts = buildOptions();
+    if (VIDEO_ID && !changed()) {           // nothing to re-encode: metadata only
+      const first = enabledIdx()[0];
+      await request(`${API}/videos/${VIDEO_ID}`, {
+        method: 'PATCH', headers: JSON_HEADERS,
+        body: JSON.stringify({ title: titleOf(first), description: opts.description }),
+      });
+      if (opts.queue) await request(`${API}/schedule/queue/${VIDEO_ID}`, { method: 'POST' });
+      return [VIDEO_ID];
     }
+    if (VIDEO_ID) {                          // re-cut the stored file; the original is replaced
+      if (!confirm('The original draft will be replaced by the new fragment(s). Continue?')) return null;
+      const list = await request(`${API}/videos/${VIDEO_ID}/fragments`, {
+        method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(opts),
+      });
+      return list.map(v => v.id);
+    }
+    if (!currentFile) throw new Error('No file to upload.');
+    const fd = new FormData();
+    fd.append('file', currentFile, currentFile.name);
+    fd.append('options', JSON.stringify(opts));
+    const list = await request(`${API}/videos/fragments`, { method: 'POST', body: fd });
+    await deleteFile(savedId).catch(() => {});
+    savedId = null;
+    return list.map(v => v.id);
   }
 
   async function save(asPublish) {
     hideStatus();
-    saveBtn.disabled = true;
-    publishBtn.disabled = true;
-    const which = asPublish ? publishBtn : saveBtn;
-    const orig = which.textContent;
-    which.textContent = asPublish ? 'Publishing…' : 'Saving…';
-
-    const vid = await saveMetadata();
-    if (!vid) {
-      saveBtn.disabled = false; publishBtn.disabled = false;
-      which.textContent = orig;
-      return;
-    }
-
-    if (asPublish) {
-      try {
-        const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${vid}/publish`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ method: 'direct', privacy_level: 'SELF_ONLY' }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(_detail(data) || `HTTP ${res.status}`);
-        }
-      } catch (e) {
-        showStatus('Publish failed: ' + e.message, 'error');
-        saveBtn.disabled = false; publishBtn.disabled = false;
-        publishBtn.textContent = orig;
+    for (const i of enabledIdx()) {
+      if (!titleOf(i)) {
+        showStatus(`Fragment ${i + 1} needs a title.`, 'error');
+        (rowsEl.children[i].querySelector('.frag-title') || titleInput).focus();
         return;
       }
     }
+    busy = true; refreshActions();
+    let ids = null;
+    try {
+      ids = await persist();
+    } catch (e) {
+      console.error(e);
+      showStatus('Save failed: ' + e.message, 'error');
+    }
+    if (!ids) { busy = false; refreshActions(); return; }
 
-    showStatus(asPublish ? 'Queued. Redirecting…' : 'Saved. Redirecting…', 'success');
+    if (asPublish) {
+      try {
+        await request(`${API}/videos/${ids[0]}/publish`, {
+          method: 'POST', headers: JSON_HEADERS,
+          body: JSON.stringify({ method: 'direct', privacy_level: 'SELF_ONLY' }),
+        });
+      } catch (e) {
+        // the draft already exists; leave the page so a retry doesn't create a duplicate
+        showStatus('Saved as a draft, but publishing failed: ' + e.message, 'error');
+        setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 2500);
+        return;
+      }
+    }
+    const n = ids.length;
+    showStatus(
+      asPublish ? 'Publishing started. Redirecting…'
+        : queueBox.checked ? `${n} video${n > 1 ? 's' : ''} queued. Redirecting…`
+        : `${n} draft${n > 1 ? 's' : ''} saved. Redirecting…`, 'success');
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 400);
   }
@@ -400,21 +692,13 @@
     const original = draftsBtn.textContent;
     draftsBtn.textContent = 'Queuing…';
     try {
-      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${VIDEO_ID}/drafts`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Accept': 'application/json' },
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(_detail(data) || `HTTP ${res.status}`);
-      }
+      await request(`${API}/videos/${VIDEO_ID}/drafts`, { method: 'POST' });
       showStatus('Queued for TikTok drafts. Open the TikTok app to finish it.', 'success');
     } catch (e) {
       showStatus('Upload to drafts failed: ' + e.message, 'error');
     } finally {
-      draftsBtn.disabled = false;
       draftsBtn.textContent = original;
+      refreshActions();
     }
   });
 
