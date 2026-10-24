@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Create account · ACM{% endblock %}
+{% block content %}
+<div class="auth-card">
+  <div class="card">
+    <h1>Create your account</h1>
+    {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+    <form method="post" action="/register">
+      <label class="field">
+        <span>Email</span>
+        <input class="input" name="email" type="email" value="{{ email }}" required autocomplete="email" autofocus>
+      </label>
+      <label class="field">
+        <span>Password <small class="dim">· min 8 characters</small></span>
+        <input class="input" name="password" type="password" minlength="8" required autocomplete="new-password">
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">Create account</button>
+    </form>
+    <p class="auth-footer">Already have an account? <a href="/login">Log in</a></p>
+  </div>
+</div>
+{% endblock %}

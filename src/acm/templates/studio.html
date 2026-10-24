@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}Studio · ACM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a href="/dashboard" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Dashboard</a>
+    <h1>Studio</h1>
+    <p>Upload a new video or browse everything already on this channel.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1.25rem">Upload new video</h2>
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+  <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Загрузить видео">
+    <input type="file" id="file-input" accept="video/mp4,video/quicktime" hidden>
+    <div class="dropzone-icon">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    </div>
+    <p class="dropzone-title">Нажмите или перетащите видео</p>
+    <p class="dropzone-hint">MP4 или MOV · до 500 MB</p>
+    <p id="dropzone-error" class="dropzone-error" hidden></p>
+  </div>
+</div>
+<div class="card mt-2">
+  <div class="page-head" style="margin-bottom:1rem">
+    <h2 style="margin:0">Saved videos</h2>
+    {% if drafts %}<span class="badge">{{ drafts|length }} draft{{ '' if drafts|length == 1 else 's' }}</span>{% endif %}
+  </div>
+
+  {% if drafts %}
+    <div class="grid grid-videos">
+      {% for draft in drafts %}
+        <div class="video-card" style="cursor:default">
+          <video
+            class="video-thumb"
+            style="object-fit:contain;background:#000"
+            controls
+            preload="metadata"
+            playsinline
+            loading="lazy">
+            <source src="/studio/{{ account_id }}/files/{{ draft.file_name }}">
+            Your browser can’t play this video.
+          </video>
+
+          <div class="video-title">{{ draft.title or 'Untitled' }}</div>
+
+          <div class="row" style="gap:.35rem;padding:0 .25rem .25rem">
+            <span class="badge">{{ draft.status }}</span>
+            <span class="dim text-sm mono" title="{{ draft.video_name }}">
+              {{ draft.video_name.rsplit('.', 1)[0][:18] }}{% if draft.video_name|length > 22 %}…{% endif %}.
+              {{ draft.video_name.rsplit('.', 1)[-1] }}
+            </span>
+          </div>
+
+          <div class="row" style="gap:.35rem;margin-top:auto;padding:0 .25rem .25rem">
+            <button class="btn btn-sm" type="button" disabled title="coming soon">Edit</button>
+            <button class="btn btn-sm btn-danger" type="button" disabled title="coming soon">Delete</button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">
+      <h3>No saved videos</h3>
+      <p>Videos you upload but don’t publish will appear here.</p>
+    </div>
+  {% endif %}
+</div>
+<div class="card mt-2">
+  <h2 style="margin-bottom:1.25rem">Channel videos</h2>
+
+  {% if videos is none %}
+    <div class="empty">
+      <h3>No videos loaded</h3>
+      <p>Couldn’t reach TikTok. Try again in a moment.</p>
+    </div>
+  {% elif not videos.is_ok %}
+    <div class="alert alert-error">
+      Failed to load videos: {{ videos.error.message or videos.error.code }}
+      {% if videos.error.log_id %}<br><small class="dim">log_id: {{ videos.error.log_id }}</small>{% endif %}
+    </div>
+  {% elif videos.data.videos %}
+    <div class="grid grid-videos">
+      {% for video in videos.data.videos %}
+      <a class="video-card" href="{{ video.embed_link }}" target="_blank" rel="noopener noreferrer">
+        {% if video.cover_image_url %}
+          <img class="video-thumb" src="{{ video.cover_image_url }}"
+               alt="{{ video.title or 'TikTok video' }}" loading="lazy">
+        {% else %}
+          <div class="video-thumb-empty">no preview</div>
+        {% endif %}
+        <div class="video-title">{{ video.title or 'Untitled' }}</div>
+      </a>
+      {% endfor %}
+    </div>
+    {% if videos.data.has_more %}
+      <p class="dim text-sm mt-2">More videos available — pagination not shown.</p>
+    {% endif %}
+  {% else %}
+    <div class="empty">
+      <h3>No videos on this channel</h3>
+      <p>Upload your first video above to see it here.</p>
+    </div>
+  {% endif %}
+</div>
+
+<style>
+  .dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .6rem;
+    width: min(360px, 100%);
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
+    cursor: pointer;
+    text-align: center;
+    padding: 1.5rem;
+    transition: border-color .15s, background .15s, transform .15s;
+  }
+  .dropzone:hover, .dropzone:focus-visible, .dropzone.dragover {
+    border-color: var(--accent-2);
+    background: color-mix(in oklab, var(--accent-2) 7%, var(--surface-2));
+    outline: none;
+  }
+  .dropzone.dragover { transform: scale(1.01); }
+  .dropzone.loading { opacity: .6; pointer-events: none; }
+  .dropzone-icon {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: var(--surface-3);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent-2);
+    transition: transform .15s, background .15s;
+  }
+  .dropzone:hover .dropzone-icon {
+    transform: scale(1.06);
+    background: color-mix(in oklab, var(--accent-2) 18%, var(--surface-3));
+  }
+  .dropzone-title { font-size: 1rem; font-weight: 500; margin: 0; }
+  .dropzone-hint  { color: var(--text-dim); font-size: .82rem; margin: 0; }
+  .dropzone-error { color: var(--danger); font-size: .82rem; margin: .25rem 0 0; }
+</style>
+
+<script>
+(function () {
+  const ACCOUNT_ID = {{ account_id }};
+  const DB_NAME = 'acm_studio';
+  const STORE = 'uploads';
+  const MAX_SIZE = 500 * 1024 * 1024;
+  const ALLOWED = ['video/mp4', 'video/quicktime'];
+  const STALE_MS = 60 * 60 * 1000; // 1 час
+
+  const dropzone = document.getElementById('dropzone');
+  const input = document.getElementById('file-input');
+  const errEl = document.getElementById('dropzone-error');
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function purgeStale() {
+    try {
+      const db = await openDB();
+      const tx = db.transaction(STORE, 'readwrite');
+      const store = tx.objectStore(STORE);
+      const req = store.openCursor();
+      const now = Date.now();
+      req.onsuccess = () => {
+        const cur = req.result;
+        if (!cur) return;
+        if (cur.value && now - (cur.value.createdAt || 0) > STALE_MS) {
+          cur.delete();
+        }
+        cur.continue();
+      };
+    } catch (_) { /* не критично */ }
+  }
+
+  async function saveFile(id, file) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(
+        { file, name: file.name, type: file.type, size: file.size, createdAt: Date.now() },
+        id,
+      );
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.hidden = false;
+  }
+
+  async function handleFile(file) {
+    errEl.hidden = true;
+    if (!file) return;
+    if (!ALLOWED.includes(file.type)) return showError('Поддерживаются только MP4 или MOV.');
+    if (file.size > MAX_SIZE) return showError('Файл слишком большой (макс. 500 MB).');
+
+    const id = (crypto.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
+
+    dropzone.classList.add('loading');
+    try {
+      await saveFile(id, file);
+      window.location.href =
+        `/studio/${ACCOUNT_ID}/creative?token=${encodeURIComponent(id)}`;
+    } catch (e) {
+      console.error(e);
+      dropzone.classList.remove('loading');
+      showError('Не удалось сохранить файл локально. Попробуйте ещё раз.');
+    }
+  }
+
+  dropzone.addEventListener('click', () => input.click());
+  dropzone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+  });
+  input.addEventListener('change', () => {
+    if (input.files && input.files[0]) handleFile(input.files[0]);
+  });
+
+  ['dragenter', 'dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    })
+  );
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  purgeStale();
+})();
+</script>
+{% endblock %}

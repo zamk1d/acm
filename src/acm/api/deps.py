@@ -1,26 +1,39 @@
 import uuid
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
 
-from acm.api.session import ACCOUNT_ID_KEY, USER_ID_KEY
+from acm.api.session import USER_ID_KEY
 from acm.core.exceptions import NotAuthenticatedError
 from acm.db.uow import UnitOfWork
-from acm.integrations.tiktok import TikTokClient
-from acm.schemas.account import AccountRead
-from acm.services.auth import AuthService
+from acm.schemas.user import UserRead
+from acm.services.studio import StudioService
+from acm.services.tiktok import TikTokService
+from acm.services.users import UserService
 
 
-def get_auth_service(request: Request) -> AuthService:
-    state = request.app.state
-    tiktok: TikTokClient = state.tiktok_client
-    return AuthService(
-        uow_factory=lambda: UnitOfWork(state.session_factory),
-        tiktok=tiktok,
-    )
+def get_uow_factory(request: Request) -> Callable[[], UnitOfWork]:
+    session_factory = request.app.state.session_factory
+    return lambda: UnitOfWork(session_factory)
 
 
-AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+UowFactoryDep = Annotated[Callable[[], UnitOfWork], Depends(get_uow_factory)]
+
+
+def get_user_service(uow_factory: UowFactoryDep) -> UserService:
+    return UserService(uow_factory)
+
+
+def get_tiktok_service(request: Request, uow_factory: UowFactoryDep) -> TikTokService:
+    return TikTokService(uow_factory, request.app.state.tiktok_client)
+
+def get_studio_service(request: Request, uow_factory: UowFactoryDep) -> StudioService:
+    return StudioService(uow_factory, request.app.state.tiktok_client)
+
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+TikTokServiceDep = Annotated[TikTokService, Depends(get_tiktok_service)]
+StudioDep = Annotated[StudioService, Depends(get_studio_service)]
 
 
 def get_current_user_id(request: Request) -> uuid.UUID:
@@ -34,11 +47,17 @@ def get_current_user_id(request: Request) -> uuid.UUID:
         raise NotAuthenticatedError() from exc
 
 
-CurrentAccountId = Annotated[uuid.UUID, Depends(get_current_user_id)]
+CurrentUserId = Annotated[uuid.UUID, Depends(get_current_user_id)]
 
 
-async def get_current_account(account_id: CurrentAccountId, service: AuthServiceDep) -> AccountRead:
-    return await service.get_account(account_id)
+async def get_current_user(
+    request: Request, user_id: CurrentUserId, service: UserServiceDep
+) -> UserRead:
+    user = await service.get_by_id(user_id)
+    if user is None:  # cookie is valid but the user was deleted
+        request.session.clear()
+        raise NotAuthenticatedError()
+    return user
 
 
-CurrentAccount = Annotated[AccountRead, Depends(get_current_account)]
+CurrentUser = Annotated[UserRead, Depends(get_current_user)]

@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import select
 
@@ -15,8 +16,20 @@ class TikTokAccountRepository(BaseRepository[TikTokAccount]):
         )
         return result.scalar_one_or_none()
 
-    async def list_by_user(self, user_id: uuid.UUID) -> list[TikTokAccount]:
+    async def get_for_user(self, user_id: uuid.UUID, account_id: int) -> TikTokAccount:
+        """Ownership-checked lookup: returns None for someone else's account."""
         result = await self._session.execute(
-            select(TikTokAccount).where(TikTokAccount.user_id == user_id)
+            select(TikTokAccount).where(
+                TikTokAccount.id == account_id,
+                TikTokAccount.user_id == user_id,
+            )
         )
-        return list(result.scalars().all())
+        return result.scalar_one_or_none()
+
+    async def list_by_user(self, user_id: uuid.UUID) -> Sequence[TikTokAccount]:
+        result = await self._session.execute(
+            select(TikTokAccount)
+            .where(TikTokAccount.user_id == user_id)
+            .order_by(TikTokAccount.created_at)
+        )
+        return result.scalars().all()

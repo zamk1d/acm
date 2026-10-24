@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class TokenResponse(BaseModel):
@@ -38,3 +40,49 @@ class TikTokUser(BaseModel):
     following_count: int | None = None
     likes_count: int | None = None
     video_count: int | None = None
+
+
+class TikTokVideo(BaseModel):
+    # TikTok добавляет новые поля — не падаем на них
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    title: str = ""
+    video_description: str | None = None
+    duration: int | None = Field(default=None, description="Длительность в секундах")
+    cover_image_url: HttpUrl | None = None
+    share_url: HttpUrl | None = None
+    embed_link: HttpUrl | None = None
+
+    # Поля ниже есть не всегда — делаем опциональными
+    like_count: int | None = None
+    comment_count: int | None = None
+    share_count: int | None = None
+    view_count: int | None = None
+
+
+class TikTokVideoListData(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    videos: list[TikTokVideo] = Field(default_factory=list)
+    cursor: int | None = None
+    has_more: bool = False
+
+
+class TikTokError(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    code: str
+    message: str = ""
+    log_id: str | None = None
+
+
+class TikTokVideoList(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    data: TikTokVideoListData
+    error: TikTokError
+
+    @property
+    def is_ok(self) -> bool:
+        return self.error.code == "ok"

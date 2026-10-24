@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Creative · ACM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Back to studio</a>
+    <h1>Edit video</h1>
+    <p>Add a title and description, then save or publish.</p>
+  </div>
+</div>
+
+<div class="creative-layout">
+  <div class="creative-video-col">
+    <div class="video-player-wrap">
+      <video id="preview-video" class="video-player" controls playsinline preload="metadata"></video>
+    </div>
+    <div class="video-meta">
+      <span class="badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        <span id="file-name">загрузка…</span>
+      </span>
+      <span class="badge" id="file-size"></span>
+    </div>
+  </div>
+
+  <div class="creative-form-col">
+    <div class="card">
+      <label class="field">
+        <span>Title</span>
+        <input class="input" id="title-input" type="text" maxlength="150"
+               placeholder="Добавьте название" required>
+      </label>
+      <label class="field">
+        <span>Description</span>
+        <textarea class="textarea" id="desc-input" rows="6" maxlength="2200"
+                  placeholder="Опишите ваше видео"></textarea>
+      </label>
+    </div>
+  </div>
+</div>
+
+<div id="status" class="alert" hidden></div>
+
+<div class="row mt-2" style="justify-content:flex-end;gap:.75rem;flex-wrap:wrap">
+  <a class="btn" href="/studio/{{ account_id }}" id="cancel-btn">Cancel</a>
+  <button class="btn" id="save-btn" type="button">Save draft</button>
+  <button class="btn btn-primary" id="publish-btn" type="button">Publish</button>
+</div>
+
+<style>
+  .creative-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 800px) {
+    .creative-layout { grid-template-columns: 1fr; }
+  }
+  .creative-video-col { display: flex; flex-direction: column; gap: .75rem; }
+  .video-player-wrap {
+    background: #000;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    aspect-ratio: 9 / 16;
+    max-height: 70vh;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .video-player {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+    background: #000;
+  }
+  .video-meta { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .creative-form-col .card { position: sticky; top: 5rem; }
+
+  #status.alert-error {
+    background: color-mix(in oklab, var(--danger) 10%, transparent);
+    border-color: color-mix(in oklab, var(--danger) 40%, transparent);
+    color: color-mix(in oklab, var(--danger) 90%, var(--text));
+  }
+  #status.alert-success {
+    background: color-mix(in oklab, var(--success) 10%, transparent);
+    border-color: color-mix(in oklab, var(--success) 40%, transparent);
+    color: color-mix(in oklab, var(--success) 90%, var(--text));
+  }
+</style>
+
+<script>
+(function () {
+  const ACCOUNT_ID = {{ account_id }};
+  const DB_NAME = 'acm_studio';
+  const STORE = 'uploads';
+  const token = new URLSearchParams(window.location.search).get('token');
+
+  const videoEl    = document.getElementById('preview-video');
+  const fileNameEl = document.getElementById('file-name');
+  const fileSizeEl = document.getElementById('file-size');
+  const titleInput = document.getElementById('title-input');
+  const descInput  = document.getElementById('desc-input');
+  const saveBtn    = document.getElementById('save-btn');
+  const publishBtn = document.getElementById('publish-btn');
+  const cancelBtn  = document.getElementById('cancel-btn');
+  const statusEl   = document.getElementById('status');
+
+  let currentFile = null;
+  let currentBlobUrl = null;
+  let savedId = null;
+
+  function showStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
+    statusEl.hidden = false;
+  }
+  function hideStatus() { statusEl.hidden = true; }
+
+  function formatSize(bytes) {
+    if (!bytes) return '';
+    const mb = bytes / (1024 * 1024);
+    return mb >= 1 ? mb.toFixed(1) + ' MB' : (bytes / 1024).toFixed(0) + ' KB';
+  }
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function getFile(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(id);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function deleteFile(id) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function disableActions() {
+    saveBtn.disabled = true;
+    publishBtn.disabled = true;
+  }
+
+  async function load() {
+    if (!token) {
+      showStatus('Файл не найден. Загрузите видео заново.', 'error');
+      return disableActions();
+    }
+    try {
+      const item = await getFile(token);
+      if (!item || !item.file) {
+        showStatus('Видео не найдено в локальном хранилище. Загрузите заново.', 'error');
+        return disableActions();
+      }
+      currentFile = item.file;
+      savedId = token;
+      currentBlobUrl = URL.createObjectURL(item.file);
+      videoEl.src = currentBlobUrl;
+      fileNameEl.textContent = item.name;
+      fileSizeEl.textContent = formatSize(item.size);
+      titleInput.value = item.name.replace(/\.[^.]+$/, '').slice(0, 150);
+    } catch (e) {
+      console.error(e);
+      showStatus('Не удалось прочитать файл из локального хранилища.', 'error');
+      disableActions();
+    }
+  }
+
+  async function save() {
+    hideStatus();
+    if (!currentFile) return showStatus('Нет файла для сохранения.', 'error');
+
+    const title = titleInput.value.trim();
+    if (!title) {
+      showStatus('Введите название видео.', 'error');
+      titleInput.focus();
+      return;
+    }
+    const description = descInput.value.trim();
+
+    saveBtn.disabled = true;
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+      const fd = new FormData();
+      fd.append('title', title);
+      fd.append('description', description);
+      fd.append('file', currentFile, currentFile.name);
+
+      const res = await fetch(`/studio/${ACCOUNT_ID}/creative/upload`, {
+        method: 'POST',
+        body: fd,
+        credentials: 'same-origin',
+      });
+
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const data = await res.json();
+          if (data && data.detail) {
+            detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+          }
+        } catch (_) {}
+        throw new Error(detail);
+      }
+
+      await deleteFile(savedId);
+      savedId = null;
+      showStatus('Сохранено. Перенаправляем…', 'success');
+      setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 400);
+    } catch (e) {
+      console.error(e);
+      showStatus('Ошибка сохранения: ' + e.message, 'error');
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText;
+    }
+  }
+
+  async function cancel() {
+    if (savedId) { try { await deleteFile(savedId); } catch (_) {} }
+    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    window.location.href = `/studio/${ACCOUNT_ID}`;
+  }
+
+  saveBtn.addEventListener('click', save);
+  publishBtn.addEventListener('click', () => {
+    showStatus('Публикация пока не реализована.', 'error');
+  });
+  cancelBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await cancel();
+  });
+  window.addEventListener('beforeunload', () => {
+    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

@@ -5,12 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from acm.repositories.tiktok_account import TikTokAccountRepository
 from acm.repositories.user import UserRepository
+from acm.repositories.video import VideoRepository
 
 
 class UnitOfWork:
     """One transaction scope. Owns the session and exposes repositories bound to it."""
 
+    users: UserRepository
     tiktok_accounts: TikTokAccountRepository
+    videos: VideoRepository
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
@@ -19,6 +22,7 @@ class UnitOfWork:
         self._session = self._session_factory()
         self.tiktok_accounts = TikTokAccountRepository(self._session)
         self.users = UserRepository(self._session)
+        self.videos = VideoRepository(self._session)
         return self
 
     async def __aexit__(

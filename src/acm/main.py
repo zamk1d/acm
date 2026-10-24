@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
 from acm.api.error_handlers import register_exception_handlers
-from acm.api.routers import auth, health, pages
+from acm.api.routers import tiktok, health, pages, users, studio
 from acm.core.config import Settings, get_settings
 from acm.core.logging import configure_logging
 from acm.db.session import create_engine, create_session_factory
@@ -53,5 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(pages.router)
-    app.include_router(auth.router)
+    app.include_router(users.router)
+    app.include_router(tiktok.router)
+    app.include_router(studio.router)
     return app

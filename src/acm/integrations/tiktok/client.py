@@ -13,12 +13,13 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from acm.integrations.tiktok.errors import TikTokAPIError, TikTokTransportError
-from acm.integrations.tiktok.schemas import TikTokUser, TokenResponse
+from acm.integrations.tiktok.schemas import TikTokUser, TokenResponse, TikTokVideoList
 
 AUTHORIZE_PATH = "/v2/auth/authorize/"
 TOKEN_PATH = "/v2/oauth/token/"
 REVOKE_PATH = "/v2/oauth/revoke/"
 USER_INFO_PATH = "/v2/user/info/"
+VIDEO_LIST_PATH = "/v2/video/list/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +98,19 @@ class TikTokClient:
         )
         try:
             return TikTokUser.model_validate(payload["data"]["user"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise TikTokAPIError("invalid_response", "Unexpected user info payload") from exc
+
+    async def get_user_videos(self, access_token: str, fields: Sequence[str]):
+        payload = await self._request(
+            "POST",
+            VIDEO_LIST_PATH,
+            params={"fields": ",".join(fields)},
+            json={"max_count": 20, "cursor": None},
+            headers={"Authorization": f"Bearer {access_token}", "Content-type": "application/json"}
+        )
+        try:
+            return TikTokVideoList.model_validate(payload)
         except (KeyError, TypeError, ValueError) as exc:
             raise TikTokAPIError("invalid_response", "Unexpected user info payload") from exc
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import DateTime, String, Text, ForeignKey
+from sqlalchemy import DateTime, String, Text, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from acm.db.base import Base, TimestampMixin
@@ -10,9 +10,16 @@ from acm.db.base import Base, TimestampMixin
 class TikTokAccount(Base, TimestampMixin):
     __tablename__ = "tiktok_accounts"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
 
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # owner: the service user this TikTok account is connected to
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
 
     # identity (open_id is unique per user per app)
     open_id: Mapped[str] = mapped_column(String(128), unique=True)

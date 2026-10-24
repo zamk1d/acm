@@ -3,7 +3,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
-from acm.core.exceptions import AccountNotFoundError, UpstreamError
+from acm.core.exceptions import AccountAlreadyLinkedError, AccountNotFoundError, UpstreamError
 from acm.core.time import utcnow
 from acm.db.uow import UnitOfWork
 from acm.integrations.tiktok import TikTokClient, TikTokUser, TokenResponse
@@ -14,8 +14,8 @@ from acm.schemas.account import AccountRead
 logger = logging.getLogger(__name__)
 
 
-class AuthService:
-    """Use-cases around TikTok authorization. Knows nothing about HTTP/sessions."""
+class TikTokService:
+    """Connecting / managing TikTok accounts that belong to a service user."""
 
     def __init__(
         self,
@@ -30,33 +30,33 @@ class AuthService:
     def build_authorization_url(self, state: str) -> str:
         return self._tiktok.build_authorization_url(state)
 
-    async def complete_login(self, code: str) -> AccountRead:
+    async def connect_account(self, user_id: uuid.UUID, code: str) -> AccountRead:
         tokens = await self._tiktok.exchange_code(code)
-        user = await self._tiktok.get_user_info(
+        profile = await self._tiktok.get_user_info(
             tokens.access_token, fields_for_scopes(tokens.scopes)
         )
 
         async with self._uow_factory() as uow:
             account = await uow.tiktok_accounts.get_by_open_id(tokens.open_id)
+            if account is not None and account.user_id != user_id:
+                raise AccountAlreadyLinkedError()
             if account is None:
-                account = TikTokAccount(open_id=tokens.open_id)
+                account = TikTokAccount(open_id=tokens.open_id, user_id=user_id)
                 uow.tiktok_accounts.add(account)
             self._apply_tokens(account, tokens)
-            self._apply_profile(account, user)
+            self._apply_profile(account, profile)
             await uow.commit()
-            logger.info("TikTok login completed open_id=%s", account.open_id)
+            logger.info("TikTok connected user_id=%s open_id=%s", user_id, account.open_id)
             return AccountRead.model_validate(account)
 
-    async def get_account(self, account_id: uuid.UUID) -> AccountRead:
+    async def list_accounts(self, user_id: uuid.UUID) -> list[AccountRead]:
         async with self._uow_factory() as uow:
-            account = await uow.tiktok_accounts.get(account_id)
-            if account is None:
-                raise AccountNotFoundError()
-            return AccountRead.model_validate(account)
+            accounts = await uow.tiktok_accounts.list_by_user(user_id)
+            return [AccountRead.model_validate(a) for a in accounts]
 
-    async def refresh_tokens(self, account_id: uuid.UUID) -> AccountRead:
+    async def refresh_tokens(self, user_id: uuid.UUID, account_id: int) -> AccountRead:
         async with self._uow_factory() as uow:
-            account = await uow.tiktok_accounts.get(account_id)
+            account = await uow.tiktok_accounts.get_for_user(user_id, account_id)
             if account is None:
                 raise AccountNotFoundError()
             tokens = await self._tiktok.refresh_access_token(account.refresh_token)
@@ -64,9 +64,9 @@ class AuthService:
             await uow.commit()
             return AccountRead.model_validate(account)
 
-    async def disconnect(self, account_id: uuid.UUID) -> None:
+    async def disconnect(self, user_id: uuid.UUID, account_id: int) -> None:
         async with self._uow_factory() as uow:
-            account = await uow.tiktok_accounts.get(account_id)
+            account = await uow.tiktok_accounts.get_for_user(user_id, account_id)
             if account is None:
                 raise AccountNotFoundError()
             try:
@@ -88,7 +88,9 @@ class AuthService:
         account.refresh_token_expires_at = now + timedelta(seconds=tokens.refresh_expires_in)
 
     @staticmethod
-    def _apply_profile(account: TikTokAccount, user: TikTokUser) -> None:
-        account.union_id = user.union_id
-        account.display_name = user.display_name
-        account.avatar_url = user.avatar_large_url or user.avatar_url_100 or user.avatar_url
+    def _apply_profile(account: TikTokAccount, profile: TikTokUser) -> None:
+        account.union_id = profile.union_id
+        account.display_name = profile.display_name
+        account.avatar_url = (
+            profile.avatar_large_url or profile.avatar_url_100 or profile.avatar_url
+        )

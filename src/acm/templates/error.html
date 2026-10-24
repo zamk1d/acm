@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Error · ACM{% endblock %}
+{% block title %}{{ status_code }} · ACM{% endblock %}
 {% block content %}
-<div class="card">
-  <h1>{{ status_code }}</h1>
-  <p>{{ message }}</p>
-  <a class="btn" href="/">Back</a>
+<div class="error-page">
+  <div class="error-code">{{ status_code }}</div>
+  <p class="muted" style="font-size:1.05rem;margin-bottom:1.5rem">{{ message }}</p>
+  <a class="btn" href="/">← Back home</a>
 </div>
 {% endblock %}

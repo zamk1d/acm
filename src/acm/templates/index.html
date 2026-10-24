@@ -1,8 +1,12 @@
 {% extends "base.html" %}
+{% block title %}ACM · Manage your TikTok{% endblock %}
 {% block content %}
-<div class="card">
-  <h1>ACM</h1>
-  <p>Connect your TikTok account.</p>
-  <a class="btn primary" href="/auth/tiktok/login">Continue with TikTok</a>
-</div>
+<section class="hero">
+  <h1>Manage your <span class="accent">TikTok</span><br>accounts in one place.</h1>
+  <p>Connect TikTok accounts, upload videos, and publish them — from a single, distraction-free dashboard.</p>
+  <div class="row">
+    <a class="btn btn-primary" href="/register">Create account</a>
+    <a class="btn" href="/login">Log in</a>
+  </div>
+</section>
 {% endblock %}

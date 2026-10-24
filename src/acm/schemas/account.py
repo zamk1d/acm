@@ -9,6 +9,7 @@ class AccountRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: int
     user_id: uuid.UUID
     open_id: str
     union_id: str | None = None

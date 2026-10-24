@@ -1,19 +1,84 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · ACM{% endblock %}
 {% block content %}
-<div class="card">
-  {% if account.avatar_url %}<img class="avatar" src="{{ account.avatar_url }}" alt="avatar" referrerpolicy="no-referrer">{% endif %}
-  <h1>{{ account.display_name or "TikTok user" }}</h1>
-  <dl>
-    <dt>open_id</dt><dd>{{ account.open_id }}</dd>
-    <dt>scopes</dt><dd>{{ account.scopes | join(", ") }}</dd>
-    <dt>access token until</dt><dd>{{ account.access_token_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
-    <dt>refresh token until</dt><dd>{{ account.refresh_token_expires_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
-  </dl>
+<div class="page-head">
+  <div>
+    <h1>Connected accounts</h1>
+    <p>
+      {% if accounts %}
+        {{ accounts|length }} TikTok account{{ '' if accounts|length == 1 else 's' }} connected
+      {% else %}
+        No accounts yet — connect one to get started
+      {% endif %}
+    </p>
+  </div>
   <div class="row">
-    <form method="post" action="/auth/tiktok/refresh"><button class="btn" type="submit">Refresh token</button></form>
-    <form method="post" action="/auth/logout"><button class="btn" type="submit">Log out</button></form>
-    <form method="post" action="/auth/tiktok/disconnect"><button class="btn" type="submit">Disconnect &amp; revoke</button></form>
+    <a class="btn btn-primary" href="/auth/tiktok/login">+ Connect TikTok</a>
   </div>
 </div>
+
+{% if accounts %}
+<div class="grid grid-accounts">
+  {% for account in accounts %}
+  <div class="card">
+    <div class="account-head">
+      {% if account.avatar_url %}
+        <img class="avatar" src="{{ account.avatar_url }}" alt="" referrerpolicy="no-referrer">
+      {% else %}
+        <div class="avatar avatar-fallback">{{ (account.display_name or 'T')[0]|upper }}</div>
+      {% endif %}
+      <div style="min-width:0">
+        <h2>{{ account.display_name or "TikTok user" }}</h2>
+        <div class="sub mono">open_id: {{ account.open_id[:18] }}{% if account.open_id|length > 18 %}…{% endif %}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      {% if account.access_token_expires_at %}
+        <span class="badge"><span class="badge-dot"></span>
+          access · {{ account.access_token_expires_at.strftime("%b %d, %H:%M") }}
+        </span>
+      {% endif %}
+      {% if account.refresh_token_expires_at %}
+        <span class="badge">
+          refresh · {{ account.refresh_token_expires_at.strftime("%b %d, %H:%M") }}
+        </span>
+      {% endif %}
+    </div>
+
+    {% if account.scopes %}
+    <dl>
+      <dt>Scopes</dt>
+      <dd>
+        {% for s in account.scopes %}
+          <span class="badge" style="margin:0 .25rem .25rem 0">{{ s }}</span>
+        {% endfor %}
+      </dd>
+    </dl>
+    {% endif %}
+
+    <hr class="divider">
+
+    <div class="row">
+      <a class="btn btn-primary btn-sm" href="/studio/{{ account.id }}">Open Studio →</a>
+      <form method="post" action="/auth/tiktok/{{ account.id }}/refresh" style="margin:0">
+        <button class="btn btn-sm" type="submit">Refresh token</button>
+      </form>
+      <form method="post" action="/auth/tiktok/{{ account.id }}/disconnect" style="margin:0"
+            onsubmit="return confirm('Disconnect and revoke access for this TikTok account?')">
+        <button class="btn btn-sm btn-danger" type="submit">Disconnect</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">
+    <h3>No TikTok accounts yet</h3>
+    <p>Connect your first TikTok account to start uploading videos.</p>
+    <a class="btn btn-primary" href="/auth/tiktok/login">Connect TikTok</a>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
