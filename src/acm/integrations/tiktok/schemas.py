@@ -1,4 +1,8 @@
+
+from datetime import UTC, datetime
+
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
 
 
 class TokenResponse(BaseModel):
@@ -40,6 +44,7 @@ class TikTokUser(BaseModel):
     video_count: int | None = None
 
 
+
 class TikTokVideo(BaseModel):
     """One item of /v2/video/list/. Only requested fields are present, hence all optional."""
 
@@ -49,13 +54,26 @@ class TikTokVideo(BaseModel):
     title: str = ""
     video_description: str | None = None
     duration: int | None = Field(default=None, description="Seconds")
-    cover_image_url: HttpUrl | None = None  # expires after a while, re-fetch the list
+    cover_image_url: HttpUrl | None = None
     share_url: HttpUrl | None = None
     embed_link: HttpUrl | None = None
     like_count: int | None = None
     comment_count: int | None = None
     share_count: int | None = None
     view_count: int | None = None
+    create_time: int | None = Field(default=None, description="Unix seconds, when posted")
+
+    @property
+    def created_at(self) -> datetime | None:
+        return datetime.fromtimestamp(self.create_time, UTC) if self.create_time else None
+
+    @property
+    def engagement_rate(self) -> float | None:
+        views = self.view_count or 0
+        if not views:
+            return None
+        engaged = (self.like_count or 0) + (self.comment_count or 0) + (self.share_count or 0)
+        return engaged / views * 100
 
 
 class TikTokVideoPage(BaseModel):
@@ -73,10 +91,24 @@ class TikTokVideoPost(BaseModel):
     publish_id: str
     upload_url: str
 
+class TikTokCreatorInfo(BaseModel):
+    """`data` of POST /v2/post/publish/creator_info/query/."""
+    model_config = ConfigDict(extra="ignore")
+
+    creator_username: str | None = None
+    creator_nickname: str | None = None
+    creator_avatar_url: str | None = None
+    privacy_level_options: list[str] = Field(default_factory=list)
+    comment_disabled: bool = False
+    duet_disabled: bool = False
+    stitch_disabled: bool = False
+    max_video_post_duration_sec: int | None = None
+
+
 class TikTokPostStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     status: str
-    fail_reason: str
-    publicaly_available_post_id: list
-    uploaded_bytes: int
+    fail_reason: str = ""
+    publicaly_available_post_id: list[str] = Field(default_factory=list)
+    uploaded_bytes: int = 0

@@ -77,3 +77,12 @@ class ReauthorizationRequiredError(AppError):
 class PublishNotImplementedError(AppError):
     status_code = 501
     default_message = "Video publishing is not implemented yet"
+
+class MissingScopeError(AppError):
+    status_code = 403
+    default_message = "The account is missing a required TikTok permission"
+
+
+class VideoNotEditableError(AppError):
+    status_code = 409
+    default_message = "This video can't be changed in its current state"

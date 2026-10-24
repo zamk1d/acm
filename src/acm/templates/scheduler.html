@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Schedule · ACM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Studio</a>
+    <h1>Auto-publishing</h1>
+    <p>Send queued videos to TikTok automatically on your schedule.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:1rem">Plan</h2>
+  <form id="plan-form">
+    <label class="field">
+      <span>Enabled</span>
+      <input type="checkbox" id="enabled" {% if plan.enabled %}checked{% endif %}>
+    </label>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem">
+      <label class="field"><span>Posts per day</span>
+        <input class="input" type="number" id="posts_per_day" min="1" max="10" value="{{ plan.posts_per_day }}">
+      </label>
+      <label class="field"><span>Timezone</span>
+        <input class="input" type="text" id="timezone" value="{{ plan.timezone }}">
+      </label>
+      <label class="field"><span>Window start</span>
+        <input class="input" type="time" id="window_start" value="{{ plan.window_start.strftime('%H:%M') }}">
+      </label>
+      <label class="field"><span>Window end</span>
+        <input class="input" type="time" id="window_end" value="{{ plan.window_end.strftime('%H:%M') }}">
+      </label>
+      <label class="field"><span>Method</span>
+        <select class="input" id="method">
+          <option value="direct" {% if plan.method == 'direct' %}selected{% endif %}>Direct post</option>
+          <option value="draft" {% if plan.method == 'draft' %}selected{% endif %}>Drafts</option>
+        </select>
+      </label>
+      <label class="field"><span>Privacy (direct only)</span>
+        <select class="input" id="privacy_level">
+          <option value="SELF_ONLY" {% if plan.privacy_level == 'SELF_ONLY' %}selected{% endif %}>SELF_ONLY</option>
+          <option value="PUBLIC_TO_EVERYONE" {% if plan.privacy_level == 'PUBLIC_TO_EVERYONE' %}selected{% endif %}>PUBLIC_TO_EVERYONE</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" type="button" onclick="savePlan()">Save plan</button>
+      <button class="btn" type="button" onclick="preview()">Preview slots</button>
+    </div>
+  </form>
+</div>
+
+<div id="preview" class="card mt-2" hidden>
+  <h2 style="margin-bottom:1rem">Preview</h2>
+  <ul id="preview-slots" class="dim" style="padding-left:1.25rem;margin:0"></ul>
+  <div id="preview-warnings" class="mt-2" style="color:var(--danger)"></div>
+</div>
+
+<div class="card mt-2">
+  <h2 style="margin-bottom:1rem">Queue ({{ queue|length }})</h2>
+  {% if queue %}
+    <ol style="padding-left:1.25rem">
+      {% for v in queue %}
+        <li style="margin-bottom:.5rem">
+          <strong>{{ v.title }}</strong>
+          <button class="btn btn-sm" style="margin-left:.5rem" onclick="dequeue({{ v.id }})">Remove</button>
+        </li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <p class="dim">Queue is empty. Add drafts from the workspace below.</p>
+  {% endif %}
+
+  {% set addable = workspace | selectattr('status', 'in', ['draft', 'failed']) | list %}
+  {% if addable %}
+    <hr class="divider">
+    <h3 style="margin-bottom:.5rem">Add from workspace</h3>
+    {% for v in addable %}
+      <div class="row" style="margin-bottom:.4rem">
+        <span>{{ v.title }} <span class="badge">{{ v.status }}</span></span>
+        <button class="btn btn-sm" onclick="enqueue({{ v.id }})">Add to queue</button>
+      </div>
+    {% endfor %}
+  {% endif %}
+</div>
+
+<script>
+const ACCOUNT_ID = {{ account_id }};
+
+function readForm() {
+  return {
+    enabled: document.getElementById('enabled').checked,
+    timezone: document.getElementById('timezone').value,
+    posts_per_day: parseInt(document.getElementById('posts_per_day').value, 10),
+    window_start: document.getElementById('window_start').value + ':00',
+    window_end: document.getElementById('window_end').value + ':00',
+    interval_minutes: null,
+    weekdays: [0,1,2,3,4,5,6],
+    method: document.getElementById('method').value,
+    privacy_level: document.getElementById('privacy_level').value,
+    disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: false,
+  };
+}
+
+async function savePlan() {
+  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/plan`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(readForm()),
+  });
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    alert('Save failed: ' + (d.detail || ('HTTP ' + r.status)));
+  } else {
+    alert('Saved.');
+  }
+}
+
+async function preview() {
+  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/preview`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(readForm()),
+  });
+  if (!r.ok) return alert('Preview failed');
+  const data = await r.json();
+  document.getElementById('preview').hidden = false;
+  document.getElementById('preview-slots').innerHTML =
+    data.slots.map(s => `<li>${s.local} → ${s.video_title || '—'}</li>`).join('');
+  document.getElementById('preview-warnings').textContent = (data.warnings || []).join(' · ');
+}
+
+async function enqueue(id) {
+  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/queue/${id}/enqueue`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (r.ok) location.reload(); else alert('Failed');
+}
+
+async function dequeue(id) {
+  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/queue/${id}/dequeue`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { 'Accept': 'application/json' },
+  });
+  if (r.ok) location.reload(); else alert('Failed');
+}
+</script>
+{% endblock %}

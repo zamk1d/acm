@@ -6,11 +6,12 @@ from pathlib import Path
 from acm.core.exceptions import (
     InvalidInputError,
     UnsupportedMediaTypeError,
-    VideoNotFoundError, PublishNotImplementedError,
+    VideoNotEditableError,
+    VideoNotFoundError,
 )
 from acm.db.uow import UnitOfWork
-from acm.models.video import Video
-from acm.schemas.video import VideoListRead, VideoRead, VideoDetailRead
+from acm.models.video import STARTABLE_STATUSES, Video, VideoStatus
+from acm.schemas.video import VideoRead
 from acm.storage import FileStorage
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ ALLOWED_EXTENSIONS = frozenset({"mp4", "mov", "webm"})  # formats TikTok accepts
 
 
 class StudioService:
-    """Local video drafts: upload, list, serve. Everything is scoped to the user's account."""
+    """The local video library: upload, edit, delete, serve. Scoped to the user's account."""
 
     def __init__(
         self,
@@ -32,11 +33,41 @@ class StudioService:
         self._storage = storage
         self._max_upload_bytes = max_upload_bytes
 
-    async def list_drafts(self, user_id: uuid.UUID, account_id: int) -> list[VideoListRead]:
+    # --- reading ---------------------------------------------------------------------------
+
+    async def list_workspace(self, user_id: uuid.UUID, account_id: int) -> list[VideoRead]:
+        """Drafts, queued, in-flight and failed videos."""
         async with self._uow_factory() as uow:
             await uow.tiktok_accounts.require_for_user(user_id, account_id)
-            videos = await uow.videos.list_unpublished(account_id)
-            return [VideoListRead.model_validate(v) for v in videos]
+            return [VideoRead.model_validate(v) for v in await uow.videos.list_active(account_id)]
+
+    async def list_history(
+        self, user_id: uuid.UUID, account_id: int, limit: int = 10
+    ) -> list[VideoRead]:
+        """Recently delivered videos (published / sent to TikTok drafts)."""
+        async with self._uow_factory() as uow:
+            await uow.tiktok_accounts.require_for_user(user_id, account_id)
+            videos = await uow.videos.list_done(account_id, limit)
+            return [VideoRead.model_validate(v) for v in videos]
+
+    async def get_video(self, user_id: uuid.UUID, account_id: int, video_id: int) -> VideoRead:
+        async with self._uow_factory() as uow:
+            await uow.tiktok_accounts.require_for_user(user_id, account_id)
+            video = await uow.videos.get_in_account(account_id, video_id)
+            if video is None:
+                raise VideoNotFoundError()
+            return VideoRead.model_validate(video)
+
+    async def get_file(self, user_id: uuid.UUID, account_id: int, file_name: str) -> Path:
+        async with self._uow_factory() as uow:
+            await uow.tiktok_accounts.require_for_user(user_id, account_id)
+            video = await uow.videos.get_by_file_name(account_id, file_name)
+        path = self._storage.path_for(video.file_name) if video and video.file_name else None
+        if path is None:
+            raise VideoNotFoundError()
+        return path
+
+    # --- writing ---------------------------------------------------------------------------
 
     async def upload_video(
         self,
@@ -78,18 +109,43 @@ class StudioService:
             await self._storage.delete(stored.name)
             raise
 
-    async def get_draft_file(self, user_id: uuid.UUID, account_id: int, file_name: str) -> Path:
+    async def update_video(
+        self, user_id: uuid.UUID, account_id: int, video_id: int, *, title: str, description: str
+    ) -> VideoRead:
         async with self._uow_factory() as uow:
-            await uow.tiktok_accounts.require_for_user(user_id, account_id)
-            video = await uow.videos.get_by_file_name(account_id, file_name)
-        if video is None:
-            raise VideoNotFoundError()
-        path = self._storage.path_for(video.file_name)
-        if path is None:  # row exists but the file is gone
-            raise VideoNotFoundError()
-        return path
+            video = await self._require_startable(uow, user_id, account_id, video_id)
+            video.title = title
+            video.description = description
+            await uow.commit()
+            return VideoRead.model_validate(video)
+
+    async def delete_video(self, user_id: uuid.UUID, account_id: int, video_id: int) -> None:
+        async with self._uow_factory() as uow:
+            video = await self._require_startable(uow, user_id, account_id, video_id)
+            file_name = video.file_name
+            await uow.videos.delete(video)
+            await uow.commit()
+        # best-effort disk cleanup AFTER commit: if it fails, the DB is still consistent
+        if file_name:
+            await self._storage.delete(file_name)
+        logger.info("Video deleted account_id=%s video_id=%s", account_id, video_id)
 
     # --- helpers ---------------------------------------------------------------------------
+
+    @staticmethod
+    async def _require_startable(
+        uow: UnitOfWork, user_id: uuid.UUID, account_id: int, video_id: int
+    ) -> Video:
+        """A video that may still be changed (not in flight, not delivered)."""
+        await uow.tiktok_accounts.require_for_user(user_id, account_id)
+        video = await uow.videos.get_in_account(account_id, video_id)
+        if video is None:
+            raise VideoNotFoundError()
+        if video.status not in {s.value for s in STARTABLE_STATUSES}:
+            if video.status == VideoStatus.PUBLISHING.value:
+                raise VideoNotEditableError("This video is being published right now")
+            raise VideoNotEditableError("This video has already been sent to TikTok")
+        return video
 
     @staticmethod
     def _validate_media(filename: str | None, content_type: str | None) -> str:
@@ -104,50 +160,3 @@ class StudioService:
         if not content_type or not content_type.startswith("video/"):
             raise UnsupportedMediaTypeError("The file is not a video")
         return extension
-
-    async def get_video(
-        self, user_id: uuid.UUID, account_id: int, video_id: int
-    ) -> VideoDetailRead:
-        async with self._uow_factory() as uow:
-            await uow.tiktok_accounts.require_for_user(user_id, account_id)
-            video = await uow.videos.get_by_id(account_id, video_id)
-        if video is None:
-            raise VideoNotFoundError()
-        return VideoDetailRead.model_validate(video)
-
-    async def update_video(
-        self,
-        user_id: uuid.UUID,
-        account_id: int,
-        video_id: int,
-        *,
-        title: str,
-        description: str,
-    ) -> VideoRead:
-        async with self._uow_factory() as uow:
-            await uow.tiktok_accounts.require_for_user(user_id, account_id)
-            video = await uow.videos.get_by_id(account_id, video_id)
-            if video is None:
-                raise VideoNotFoundError()
-            video.title = title
-            video.description = description
-            await uow.commit()
-            logger.info("Draft updated account_id=%s video_id=%s", account_id, video_id)
-            return VideoRead.model_validate(video)
-
-    async def delete_video(
-        self, user_id: uuid.UUID, account_id: int, video_id: int
-    ) -> None:
-        async with self._uow_factory() as uow:
-            await uow.tiktok_accounts.require_for_user(user_id, account_id)
-            video = await uow.videos.get_by_id(account_id, video_id)
-            if video is None:
-                raise VideoNotFoundError()
-            file_name = video.file_name
-            await uow.videos.delete(video)
-            await uow.commit()
-        # best-effort disk cleanup AFTER commit: if it fails, DB is still consistent
-        if file_name:
-            await self._storage.delete(file_name)
-        logger.info("Draft deleted account_id=%s video_id=%s", account_id, video_id)
-

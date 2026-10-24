@@ -5,7 +5,10 @@
   <div>
     <a href="/dashboard" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Dashboard</a>
     <h1>Studio</h1>
-    <p>Upload a new video or browse everything already on this channel.</p>
+    <p>Upload, schedule and publish videos to this channel.</p>
+  </div>
+  <div class="row">
+    <a class="btn" href="/studio/{{ account_id }}/schedule">Schedule →</a>
   </div>
 </div>
 
@@ -31,52 +34,79 @@
 
 <div class="card mt-2">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-    <h2 style="margin:0">Saved videos</h2>
-    {% if drafts %}<span class="badge">{{ drafts|length }} draft{{ '' if drafts|length == 1 else 's' }}</span>{% endif %}
+    <h2 style="margin:0">Workspace</h2>
+    {% if workspace %}<span class="badge">{{ workspace|length }} video{{ '' if workspace|length == 1 else 's' }}</span>{% endif %}
   </div>
 
-  {% if drafts %}
-    <div class="grid grid-videos" id="drafts-grid">
-      {% for draft in drafts %}
-        <div class="video-card draft-card" data-video-id="{{ draft.id }}">
+  {% if workspace %}
+    <div class="grid grid-videos">
+      {% for v in workspace %}
+        <div class="video-card" data-video-id="{{ v.id }}">
           <div class="draft-preview">
-            <video preload="metadata" controls playsinline
-                   class="video-thumb" style="object-fit:contain;background:#000">
-              <source src="/studio/{{ account_id }}/files/{{ draft.file_name }}">
-            </video>
+            {% if v.file_name %}
+              <video preload="metadata" controls playsinline
+                     class="video-thumb" style="object-fit:contain;background:#000">
+                <source src="/studio/{{ account_id }}/files/{{ v.file_name }}">
+              </video>
+            {% else %}
+              <div class="video-thumb-empty">no file</div>
+            {% endif %}
           </div>
-          <div class="video-title" title="{{ draft.title }}">{{ draft.title or 'Untitled' }}</div>
+          <div class="video-title" title="{{ v.title }}">{{ v.title or 'Untitled' }}</div>
           <div class="draft-meta">
-            <span class="badge status-{{ draft.status }}">{{ draft.status }}</span>
-            <span class="dim text-sm mono ellipsis" title="{{ draft.video_name }}">{{ draft.video_name }}</span>
+            <span class="badge status-{{ v.status }}">{{ v.status }}</span>
+            <span class="dim text-sm mono ellipsis" title="{{ v.video_name }}">{{ v.video_name }}</span>
           </div>
+          {% if v.error %}<p class="dim text-sm" style="color:var(--danger);margin:0;padding:0 .25rem">{{ v.error }}</p>{% endif %}
           <div class="draft-actions">
-            <a class="btn btn-sm" href="/studio/{{ account_id }}/creative?id={{ draft.id }}">Edit</a>
-            <button class="btn btn-sm" type="button"
-                    onclick="postToDrafts({{ draft.id }}, this)">Post to drafts</button>
-            <button class="btn btn-sm btn-primary" type="button"
-                    onclick="publishDraft({{ draft.id }}, this)">Publish</button>
-            <button class="btn btn-sm btn-danger" type="button"
-                    onclick="deleteDraft({{ draft.id }}, this)">Delete</button>
+            <a class="btn btn-sm" href="/studio/{{ account_id }}/creative?id={{ v.id }}">Edit</a>
+            {% if v.status in ('draft', 'failed') %}
+              <button class="btn btn-sm" type="button" onclick="postToDrafts({{ v.id }}, this)">To drafts</button>
+              <button class="btn btn-sm btn-primary" type="button" onclick="publishDirect({{ v.id }}, this)">Publish</button>
+            {% endif %}
+            {% if v.status == 'publishing' %}
+              <span class="badge">uploading…</span>
+            {% endif %}
+            <button class="btn btn-sm btn-danger" type="button" onclick="deleteVideo({{ v.id }}, this)">Delete</button>
           </div>
         </div>
       {% endfor %}
     </div>
-    <div class="empty" id="drafts-empty" hidden>
-      <h3>No saved videos</h3>
-      <p>Videos you upload but don’t publish will appear here.</p>
-    </div>
   {% else %}
     <div class="empty">
-      <h3>No saved videos</h3>
-      <p>Videos you upload but don’t publish will appear here.</p>
+      <h3>Nothing in the workspace</h3>
+      <p>Videos you upload but don’t send to TikTok will appear here.</p>
     </div>
   {% endif %}
 </div>
 
+{% if history %}
+<div class="card mt-2">
+  <h2 style="margin-bottom:1rem">Recent history</h2>
+  <div class="grid grid-videos">
+    {% for v in history %}
+      <div class="video-card">
+        <div class="video-thumb-empty">
+          {% if v.status == 'published' %}published{% else %}in drafts{% endif %}
+        </div>
+        <div class="video-title">{{ v.title or 'Untitled' }}</div>
+        <div class="draft-meta">
+          <span class="badge status-{{ v.status }}">{{ v.status }}</span>
+          {% if v.published_at %}<span class="dim text-sm">{{ v.published_at.strftime("%b %d, %H:%M") }}</span>{% endif %}
+        </div>
+        {% if v.tiktok_video_id %}
+          <div class="row" style="padding:.25rem">
+            <a class="btn btn-sm" href="/studio/{{ account_id }}/tiktok/{{ v.tiktok_video_id }}">Analytics</a>
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card mt-2">
   <h2 style="margin-bottom:1rem">Channel videos</h2>
-
   {% if videos_error %}
     <div class="alert alert-error">Failed to load videos: {{ videos_error }}</div>
   {% elif videos and videos.videos %}
@@ -90,9 +120,11 @@
             <div class="video-thumb-empty">no preview</div>
           {% endif %}
           <div class="video-title">{{ video.title or 'Untitled' }}</div>
-          <div class="row" style="padding:0 .25rem .25rem">
-            <span class="badge">TikTok</span>
-          </div>
+          {% if video.view_count is not none %}
+            <div class="row" style="padding:0 .25rem .25rem">
+              <span class="badge">{{ '{:,}'.format(video.view_count) }} views</span>
+            </div>
+          {% endif %}
         </a>
       {% endfor %}
     </div>
@@ -109,15 +141,10 @@
 
 <style>
   .dropzone {
-    display: flex;
-    align-items: center;
-    gap: 1.25rem;
-    width: 100%;
+    display: flex; align-items: center; gap: 1.25rem; width: 100%;
     padding: 1.25rem 1.5rem;
-    border: 2px dashed var(--border-strong);
-    border-radius: var(--radius-lg);
-    background: var(--surface-2);
-    cursor: pointer;
+    border: 2px dashed var(--border-strong); border-radius: var(--radius-lg);
+    background: var(--surface-2); cursor: pointer;
     transition: border-color .15s, background .15s;
   }
   .dropzone:hover, .dropzone:focus-visible, .dropzone.dragover {
@@ -127,21 +154,17 @@
   }
   .dropzone.loading { opacity: .6; pointer-events: none; }
   .dropzone-icon {
-    width: 48px; height: 48px; border-radius: 50%;
-    background: var(--surface-3);
+    width: 48px; height: 48px; border-radius: 50%; background: var(--surface-3);
     display: flex; align-items: center; justify-content: center;
-    color: var(--accent-2);
-    flex-shrink: 0;
-    transition: transform .15s;
+    color: var(--accent-2); flex-shrink: 0; transition: transform .15s;
   }
   .dropzone:hover .dropzone-icon { transform: scale(1.06); }
   .dropzone-text { flex: 1; min-width: 0; }
   .dropzone-title { font-size: 1rem; font-weight: 500; margin: 0 0 .15rem; }
-  .dropzone-hint  { color: var(--text-dim); font-size: .82rem; margin: 0; }
+  .dropzone-hint { color: var(--text-dim); font-size: .82rem; margin: 0; }
   .dropzone-error { color: var(--danger); font-size: .82rem; margin: .5rem 0 0; }
   .accent-link { color: var(--accent-2); }
 
-  .draft-card { gap: .4rem; }
   .draft-preview { border-radius: var(--radius-sm); overflow: hidden; background: #000; }
   .draft-preview video { width: 100%; aspect-ratio: 9/16; display: block; }
   .draft-meta { display: flex; gap: .35rem; align-items: center; padding: 0 .25rem; min-width: 0; }
@@ -149,9 +172,12 @@
 
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  .status-draft     { color: var(--text-muted); }
-  .status-published { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
-  .status-failed    { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); }
+  .status-draft      { color: var(--text-muted); }
+  .status-queued     { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
+  .status-publishing { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .status-published  { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
+  .status-inbox      { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
+  .status-failed     { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); }
 
   @media (max-width: 600px) {
     .dropzone { flex-direction: column; text-align: center; }
@@ -173,12 +199,10 @@
   const errEl = document.getElementById('dropzone-error');
 
   function _detail(data) {
-        const d = data && data.detail;
-        if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
-        return d;
-      }
-
-  // ── Dropzone ─────────────────────────────────
+    const d = data && data.detail;
+    if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
+    return d;
+  }
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -221,11 +245,9 @@
     if (!file) return;
     if (!ALLOWED.includes(file.type)) return showError('Only MP4, MOV or WebM files are supported.');
     if (file.size > MAX_SIZE) return showError('File is too large.');
-
     const id = (crypto.randomUUID
       ? crypto.randomUUID()
       : String(Date.now()) + '-' + Math.random().toString(36).slice(2));
-
     dropzone.classList.add('loading');
     try {
       await saveFile(id, file);
@@ -255,81 +277,53 @@
     if (file) handleFile(file);
   });
 
-  // ── Draft actions ────────────────────────────
-  window.publishDraft = async function (id, btn) {
-    if (!confirm('Publish this video to TikTok?')) return;
+  window.postToDrafts = async function (id, btn) {
+    if (!confirm('Send to TikTok drafts? You will finish it in the TikTok app.')) return;
     btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = 'Publishing…';
+    const orig = btn.textContent; btn.textContent = 'Queuing…';
+    try {
+      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/post`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(_detail(data) || `HTTP ${res.status}`); }
+      window.location.reload();
+    } catch (e) {
+      alert('Post failed: ' + e.message);
+      btn.disabled = false; btn.textContent = orig;
+    }
+  };
+
+  window.publishDirect = async function (id, btn) {
+    if (!confirm('Publish this video directly to TikTok?')) return;
+    btn.disabled = true;
+    const orig = btn.textContent; btn.textContent = 'Queuing…';
     try {
       const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/publish`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ post_info: {}, source_info: {} }),
-      })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(_detail(data) || `HTTP ${res.status}`);
-
-      }
-      // Publish returns 200 with null body; the draft disappears from the list on reload.
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ method: 'direct', privacy_level: 'SELF_ONLY' }),
+      });
+      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(_detail(data) || `HTTP ${res.status}`); }
       window.location.reload();
     } catch (e) {
       alert('Publish failed: ' + e.message);
-      btn.disabled = false;
-      btn.textContent = original;
+      btn.disabled = false; btn.textContent = orig;
     }
   };
 
-    window.postToDrafts = async function (id, btn) {
-    if (!confirm('Send this video to your TikTok drafts? You will finish it in the TikTok app.')) return;
-    btn.disabled = true;
-    const original = btn.textContent;
-    btn.textContent = 'Uploading…';
-    try {
-      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/post`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Accept': 'application/json' },
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(_detail(data) || `HTTP ${res.status}`);
-      }
-      alert('Sent to TikTok drafts. Open the TikTok app to finish and publish it.');
-    } catch (e) {
-      alert('Upload to drafts failed: ' + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = original;
-    }
-  };
-
-  window.deleteDraft = async function (id, btn) {
-    if (!confirm('Delete this draft? The file will be removed from disk.')) return;
+  window.deleteVideo = async function (id, btn) {
+    if (!confirm('Delete this video? The file will be removed from disk.')) return;
     btn.disabled = true;
     try {
       const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/delete`, {
-        method: 'POST',
-        credentials: 'same-origin',
+        method: 'POST', credentials: 'same-origin',
         headers: { 'Accept': 'application/json' },
       });
       if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
-      const card = document.querySelector(`.draft-card[data-video-id="${id}"]`);
+      const card = document.querySelector(`.video-card[data-video-id="${id}"]`);
       if (card) card.remove();
-      const grid = document.getElementById('drafts-grid');
-      if (grid && !grid.querySelector('.draft-card')) {
-        grid.remove();
-        const empty = document.getElementById('drafts-empty');
-        if (empty) empty.hidden = false;
-        // remove counter badge
-        const badge = document.querySelector('.card h2 + .badge');
-        if (badge) badge.remove();
-      }
+      if (!document.querySelector('.video-card[data-video-id]')) window.location.reload();
     } catch (e) {
       alert('Delete failed: ' + e.message);
       btn.disabled = false;

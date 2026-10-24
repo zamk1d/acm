@@ -5,11 +5,8 @@
   <div>
     <h1>Connected accounts</h1>
     <p>
-      {% if accounts %}
-        {{ accounts|length }} TikTok account{{ '' if accounts|length == 1 else 's' }} connected
-      {% else %}
-        No accounts yet — connect one to get started
-      {% endif %}
+      {% if accounts %}{{ accounts|length }} TikTok account{{ '' if accounts|length == 1 else 's' }} connected
+      {% else %}No accounts yet — connect one to get started{% endif %}
     </p>
   </div>
   <div class="row">
@@ -29,33 +26,8 @@
       {% endif %}
       <div style="min-width:0">
         <h2>{{ account.display_name or "TikTok user" }}</h2>
-        <div class="sub mono">open_id: {{ account.open_id[:18] }}{% if account.open_id|length > 18 %}…{% endif %}</div>
       </div>
     </div>
-
-    <div class="row mt-2">
-      {% if account.access_token_expires_at %}
-        <span class="badge"><span class="badge-dot"></span>
-          access · {{ account.access_token_expires_at.strftime("%b %d, %H:%M") }}
-        </span>
-      {% endif %}
-      {% if account.refresh_token_expires_at %}
-        <span class="badge">
-          refresh · {{ account.refresh_token_expires_at.strftime("%b %d, %H:%M") }}
-        </span>
-      {% endif %}
-    </div>
-
-    {% if account.scopes %}
-    <dl>
-      <dt>Scopes</dt>
-      <dd>
-        {% for s in account.scopes %}
-          <span class="badge" style="margin:0 .25rem .25rem 0">{{ s }}</span>
-        {% endfor %}
-      </dd>
-    </dl>
-    {% endif %}
 
     <hr class="divider">
 

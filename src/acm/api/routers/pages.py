@@ -16,7 +16,9 @@ async def index(request: Request) -> Response:
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request, user: CurrentUser, tiktok: TikTokServiceDep) -> Response:
+async def dashboard(
+    request: Request, user: CurrentUser, tiktok: TikTokServiceDep
+) -> Response:
     accounts = await tiktok.list_accounts(user.id)
     return templates.TemplateResponse(
         request, "dashboard.html", {"user": user, "accounts": accounts}
