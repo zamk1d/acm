@@ -1,5 +1,9 @@
 FROM python:3.13-slim
 
+# ffmpeg + ffprobe as static binaries — multi-arch, works on amd64 and arm64 hosts.
+# Must be before any regular COPY (Docker requires all COPY --from first).
+COPY --from=mwader/static-ffmpeg:7.1 /ffmpeg /usr/local/bin/ffmpeg
+COPY --from=mwader/static-ffmpeg:7.1 /ffprobe /usr/local/bin/ffprobe
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ENV PYTHONUNBUFFERED=1 \

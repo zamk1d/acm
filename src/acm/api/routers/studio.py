@@ -1,24 +1,19 @@
 import logging
 import mimetypes
-from typing import Annotated
 
-from fastapi import APIRouter, Body, File, Form, Request, UploadFile
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from acm.api.deps import (
     AnalyticsDep,
     CurrentUser,
     CurrentUserId,
-    PublishingDep,
     StudioDep,
     TikTokServiceDep,
 )
 from acm.api.templating import templates
-from acm.api.uploads import iter_upload
 from acm.core.exceptions import AppError
 from acm.integrations.tiktok import TikTokVideoPage
-from acm.schemas.publishing import PublishMethod, PublishOptions
-from acm.schemas.video import VideoRead, VideoRequest, VideoUpdateRequest
 
 router = APIRouter(include_in_schema=False, prefix="/studio/{account_id}")
 logger = logging.getLogger(__name__)
@@ -57,16 +52,6 @@ async def studio_page(
     )
 
 
-@router.get("/videos/list")
-async def list_videos(
-    account_id: int,
-    user_id: CurrentUserId,
-    tiktok: TikTokServiceDep,
-    cursor: int | None = None,
-) -> TikTokVideoPage:
-    return await tiktok.list_videos(user_id, account_id, cursor)
-
-
 @router.get("/creative", response_class=HTMLResponse)
 async def creative_studio(
     request: Request,
@@ -83,97 +68,6 @@ async def creative_studio(
         "creative_studio.html",
         {"user": user, "account_id": account_id, "video": video},
     )
-
-
-@router.post("/creative/upload", status_code=201)
-async def upload(
-    account_id: int,
-    user_id: CurrentUserId,
-    service: StudioDep,
-    metadata: Annotated[VideoRequest, Form()],
-    file: Annotated[UploadFile, File()],
-) -> VideoRead:
-    return await service.upload_video(
-        user_id,
-        account_id,
-        filename=file.filename,
-        content_type=file.content_type,
-        chunks=iter_upload(file),
-        title=metadata.title,
-        description=metadata.description,
-    )
-
-
-@router.post("/videos/{video_id}/update")
-async def update_video(
-    account_id: int,
-    video_id: int,
-    user_id: CurrentUserId,
-    service: StudioDep,
-    payload: VideoUpdateRequest,
-) -> VideoRead:
-    return await service.update_video(
-        user_id, account_id, video_id,
-        title=payload.title, description=payload.description,
-    )
-
-
-@router.post("/videos/{video_id}/delete", status_code=204)
-async def delete_video(
-    account_id: int,
-    video_id: int,
-    user_id: CurrentUserId,
-    service: StudioDep,
-) -> Response:
-    await service.delete_video(user_id, account_id, video_id)
-    return Response(status_code=204)
-
-
-@router.get("/files/{file_name}")
-async def draft_file(
-    account_id: int,
-    file_name: str,
-    user_id: CurrentUserId,
-    service: StudioDep,
-) -> FileResponse:
-    path = await service.get_file(user_id, account_id, file_name)
-    media_type, _ = mimetypes.guess_type(path.name)
-    return FileResponse(path, media_type=media_type or "application/octet-stream")
-
-
-@router.post("/videos/{video_id}/post")
-async def post_to_drafts(
-    account_id: int,
-    video_id: int,
-    user_id: CurrentUserId,
-    service: PublishingDep,
-) -> VideoRead:
-    return await service.start(
-        user_id, account_id, video_id, PublishOptions(method=PublishMethod.DRAFT)
-    )
-
-
-@router.post("/videos/{video_id}/publish")
-async def direct_post(
-    account_id: int,
-    video_id: int,
-    user_id: CurrentUserId,
-    service: PublishingDep,
-    options: PublishOptions | None = Body(default=None),
-) -> VideoRead:
-    if options is None:
-        options = PublishOptions(method=PublishMethod.DIRECT, privacy_level="SELF_ONLY")
-    return await service.start(user_id, account_id, video_id, options)
-
-
-@router.get("/videos/{video_id}/state")
-async def video_state(
-    account_id: int,
-    video_id: int,
-    user_id: CurrentUserId,
-    service: StudioDep,
-) -> VideoRead:
-    return await service.get_video(user_id, account_id, video_id)
 
 
 @router.get("/videos/{video_id}", response_class=HTMLResponse)
@@ -218,3 +112,17 @@ async def tiktok_video_analytics(
             "analytics": data,
         },
     )
+
+
+@router.get("/files/{file_name}")
+async def draft_file(
+    account_id: int,
+    file_name: str,
+    user_id: CurrentUserId,
+    service: StudioDep,
+) -> FileResponse:
+    path = await service.get_file(user_id, account_id, file_name)
+    media_type, _ = mimetypes.guess_type(path.name)
+    # No `filename=`: that would add "Content-Disposition: attachment" and force a download.
+    # Without it the browser plays the video inline; Range requests (seeking) work out of the box.
+    return FileResponse(path, media_type=media_type or "application/octet-stream")

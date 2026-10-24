@@ -43,3 +43,7 @@ class LocalFileStorage:
         path = self.path_for(name)
         if path is not None:
             await asyncio.to_thread(path.unlink, missing_ok=True)
+
+    def new_path(self, extension: str) -> Path:
+        name = f"{uuid.uuid4().hex}.{extension}"
+        return self._root / name

@@ -5,7 +5,7 @@
   <div>
     <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Studio</a>
     <h1>{{ 'Edit video' if video else 'New video' }}</h1>
-    <p>Add a title and description, then save as draft or publish.</p>
+    <p>Trim, change speed, then save or publish.</p>
   </div>
 </div>
 
@@ -41,9 +41,38 @@
       </label>
       <label class="field">
         <span>Description <small class="dim" id="desc-counter">0/255</small></span>
-        <textarea class="textarea" id="desc-input" rows="6" maxlength="255"
+        <textarea class="textarea" id="desc-input" rows="4" maxlength="255"
                   placeholder="Describe your video">{{ video.description if video else '' }}</textarea>
       </label>
+
+      <!-- ── Trim & Speed ─────────────────────────── -->
+      <hr class="divider">
+      <h3 style="margin-bottom:.75rem">Trim &amp; Speed</h3>
+
+      <label class="field">
+        <span>Start time <small class="dim" id="start-label">0.0s</small></span>
+        <input type="range" id="start-range" min="0" step="0.1" value="0" style="width:100%">
+        <input class="input" id="start-input" type="number" step="0.1" min="0"
+               style="width:100%;margin-top:.25rem" placeholder="Seconds">
+      </label>
+
+      <label class="field">
+        <span>End time <small class="dim" id="end-label">0.0s</small></span>
+        <input type="range" id="end-range" min="0" step="0.1" value="0" style="width:100%">
+        <input class="input" id="end-input" type="number" step="0.1" min="0"
+               style="width:100%;margin-top:.25rem" placeholder="Seconds">
+      </label>
+
+      <label class="field">
+        <span>Speed <small class="dim" id="speed-label">1.00x</small></span>
+        <input type="range" id="speed-range" min="0.25" max="4" step="0.05" value="1" style="width:100%">
+        <input class="input" id="speed-input" type="number" step="0.01" min="0.25" max="4"
+               value="1.00" style="width:100%;margin-top:.25rem">
+      </label>
+
+      <p class="dim text-sm" style="margin-top:.5rem">
+        Trimmed duration: <span id="trim-duration">0.0s</span>
+      </p>
     </div>
   </div>
 </div>
@@ -80,8 +109,12 @@
   .video-meta { display: flex; flex-wrap: wrap; gap: .5rem; }
   .creative-form-col .card { position: sticky; top: 5rem; }
 
-  .status-draft     { color: var(--text-muted); }
-  .status-published { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
+  .status-draft      { color: var(--text-muted); }
+  .status-queued     { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
+  .status-publishing { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .status-published  { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
+  .status-inbox      { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
+  .status-failed     { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); }
 
   #status.alert-error {
     background: color-mix(in oklab, var(--danger) 10%, transparent);
@@ -111,13 +144,31 @@
   const descCounter  = document.getElementById('desc-counter');
   const saveBtn    = document.getElementById('save-btn');
   const publishBtn = document.getElementById('publish-btn');
+  const draftsBtn  = document.getElementById('drafts-btn');
   const cancelBtn  = document.getElementById('cancel-btn');
   const statusEl   = document.getElementById('status');
+
+  const startRange = document.getElementById('start-range');
+  const startInput = document.getElementById('start-input');
+  const endRange   = document.getElementById('end-range');
+  const endInput   = document.getElementById('end-input');
+  const speedRange = document.getElementById('speed-range');
+  const speedInput = document.getElementById('speed-input');
+  const startLabel = document.getElementById('start-label');
+  const endLabel   = document.getElementById('end-label');
+  const speedLabel = document.getElementById('speed-label');
+  const trimDurEl  = document.getElementById('trim-duration');
 
   let currentFile = null;
   let currentBlobUrl = null;
   let savedId = null;
+  let videoDuration = 0; // seconds
 
+  function _detail(data) {
+    const d = data && data.detail;
+    if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
+    return d;
+  }
   function showStatus(msg, type) {
     statusEl.textContent = msg;
     statusEl.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
@@ -132,12 +183,6 @@
   descInput.addEventListener('input', updateCounters);
   updateCounters();
 
-
-  function _detail(data) {
-          const d = data && data.detail;
-          if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
-          return d;
-        }
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -164,6 +209,63 @@
     });
   }
 
+  // ── Trim & speed UI ─────────────────────────────────
+  function syncStart(value) {
+    const v = Math.min(parseFloat(value) || 0, videoDuration - 0.1);
+    startRange.value = v;
+    startInput.value = v.toFixed(1);
+    startLabel.textContent = `${v.toFixed(1)}s`;
+    if (parseFloat(endRange.value) <= v) {
+      endRange.value = v + 0.1;
+      endInput.value = (v + 0.1).toFixed(1);
+      endLabel.textContent = `${(v + 0.1).toFixed(1)}s`;
+    }
+    updateTrimDuration();
+  }
+  function syncEnd(value) {
+    const v = Math.min(Math.max(parseFloat(value) || 0, parseFloat(startRange.value) + 0.1), videoDuration);
+    endRange.value = v;
+    endInput.value = v.toFixed(1);
+    endLabel.textContent = `${v.toFixed(1)}s`;
+    updateTrimDuration();
+  }
+  function syncSpeed(value) {
+    const v = Math.min(Math.max(parseFloat(value) || 1, 0.25), 4);
+    speedRange.value = v;
+    speedInput.value = v.toFixed(2);
+    speedLabel.textContent = `${v.toFixed(2)}x`;
+    if (videoEl) videoEl.playbackRate = v;
+    updateTrimDuration();
+  }
+  function updateTrimDuration() {
+    const dur = Math.max(0, parseFloat(endRange.value) - parseFloat(startRange.value));
+    const speed = parseFloat(speedRange.value) || 1;
+    trimDurEl.textContent = `${(dur / speed).toFixed(1)}s`;
+  }
+
+  startRange.addEventListener('input', (e) => syncStart(e.target.value));
+  startInput.addEventListener('input', (e) => syncStart(e.target.value));
+  endRange.addEventListener('input', (e) => syncEnd(e.target.value));
+  endInput.addEventListener('input', (e) => syncEnd(e.target.value));
+  speedRange.addEventListener('input', (e) => syncSpeed(e.target.value));
+  speedInput.addEventListener('input', (e) => syncSpeed(e.target.value));
+
+  function initTrimUI() {
+    if (!videoDuration || !isFinite(videoDuration)) return;
+    startRange.max = videoDuration;
+    endRange.max = videoDuration;
+    endRange.value = videoDuration;
+    endInput.value = videoDuration.toFixed(1);
+    endLabel.textContent = `${videoDuration.toFixed(1)}s`;
+    updateTrimDuration();
+  }
+
+  videoEl.addEventListener('loadedmetadata', () => {
+    videoDuration = videoEl.duration;
+    initTrimUI();
+  });
+
+  // ── Load file ───────────────────────────────────────
   async function loadCreateMode() {
     if (!token) {
       showStatus('File not found. Please upload a video again.', 'error');
@@ -192,6 +294,7 @@
     }
   }
 
+  // ── Save / Publish / Drafts ────────────────────────
   async function saveMetadata() {
     const title = titleInput.value.trim();
     const description = descInput.value.trim();
@@ -204,15 +307,15 @@
 
     try {
       if (VIDEO_ID) {
-        const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${VIDEO_ID}/update`, {
-          method: 'POST',
+        const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${VIDEO_ID}`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           credentials: 'same-origin',
           body: JSON.stringify({ title, description }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || `HTTP ${res.status}`);
+          throw new Error(_detail(data) || `HTTP ${res.status}`);
         }
         return VIDEO_ID;
       } else {
@@ -221,7 +324,10 @@
         fd.append('title', title);
         fd.append('description', description);
         fd.append('file', currentFile, currentFile.name);
-        const res = await fetch(`/studio/${ACCOUNT_ID}/creative/upload`, {
+        fd.append('start', startRange.value);
+        fd.append('end', endRange.value);
+        fd.append('speed', speedRange.value);
+        const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/processed`, {
           method: 'POST',
           body: fd,
           credentials: 'same-origin',
@@ -229,7 +335,7 @@
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.detail || `HTTP ${res.status}`);
+          throw new Error(_detail(data) || `HTTP ${res.status}`);
         }
         const data = await res.json();
         await deleteFile(savedId).catch(() => {});
@@ -260,14 +366,11 @@
 
     if (asPublish) {
       try {
-        const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${vid}/publish`, {
+        const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${vid}/publish`, {
           method: 'POST',
           credentials: 'same-origin',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ post_info: {}, source_info: {} }),
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ method: 'direct', privacy_level: 'SELF_ONLY' }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -281,23 +384,23 @@
       }
     }
 
-    showStatus(asPublish ? 'Published. Redirecting…' : 'Saved. Redirecting…', 'success');
+    showStatus(asPublish ? 'Queued. Redirecting…' : 'Saved. Redirecting…', 'success');
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
     setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 400);
   }
 
   saveBtn.addEventListener('click', () => save(false));
   publishBtn.addEventListener('click', () => save(true));
-  const draftsBtn = document.getElementById('drafts-btn');
+
   draftsBtn.addEventListener('click', async () => {
     if (!VIDEO_ID) return;
     if (!confirm('Send this video to your TikTok drafts? You will finish it in the TikTok app.')) return;
     hideStatus();
     draftsBtn.disabled = true;
     const original = draftsBtn.textContent;
-    draftsBtn.textContent = 'Uploading…';
+    draftsBtn.textContent = 'Queuing…';
     try {
-      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${VIDEO_ID}/post`, {
+      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${VIDEO_ID}/drafts`, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Accept': 'application/json' },
@@ -306,7 +409,7 @@
         const data = await res.json().catch(() => ({}));
         throw new Error(_detail(data) || `HTTP ${res.status}`);
       }
-      showStatus('Sent to TikTok drafts. Open the TikTok app to finish and publish it.', 'success');
+      showStatus('Queued for TikTok drafts. Open the TikTok app to finish it.', 'success');
     } catch (e) {
       showStatus('Upload to drafts failed: ' + e.message, 'error');
     } finally {
@@ -314,6 +417,7 @@
       draftsBtn.textContent = original;
     }
   });
+
   cancelBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     if (savedId) { try { await deleteFile(savedId); } catch (_) {} }

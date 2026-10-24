@@ -2,7 +2,9 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-
+import asyncio
+import subprocess
+import tempfile
 from acm.core.exceptions import (
     InvalidInputError,
     UnsupportedMediaTypeError,
@@ -160,3 +162,112 @@ class StudioService:
         if not content_type or not content_type.startswith("video/"):
             raise UnsupportedMediaTypeError("The file is not a video")
         return extension
+
+    async def upload_video_processed(
+            self,
+            user_id: uuid.UUID,
+            account_id: int,
+            *,
+            filename: str | None,
+            content_type: str | None,
+            chunks,
+            title: str,
+            description: str,
+            start: float = 0,
+            end: float | None = None,
+            speed: float = 1.0,
+    ) -> VideoRead:
+        extension = self._validate_media(filename, content_type)
+
+        # 1) authorize
+        async with self._uow_factory() as uow:
+            await uow.tiktok_accounts.require_for_user(user_id, account_id)
+
+        # 2) save the raw upload to a temp file
+        stored_raw = await self._storage.save(
+            chunks, extension=extension, max_bytes=self._max_upload_bytes
+        )
+        raw_path = self._storage.path_for(stored_raw.name)
+        if raw_path is None:
+            raise InvalidInputError("Failed to store upload")
+
+        # 3) process with ffmpeg into another temp file
+        processed_name = f"{uuid.uuid4().hex}.{extension}"
+        processed_path = self._storage.path_for(processed_name)  # path_for returns None if missing
+        # we need a path that doesn't exist yet; build directly:
+        root = self._storage._root  # type: ignore[attr-defined]  # or add a public method
+        processed_path = root / processed_name
+
+        try:
+            await self._ffmpeg_trim_speed(raw_path, processed_path, start, end, speed)
+        except Exception:
+            # cleanup raw file on failure
+            await self._storage.delete(stored_raw.name)
+            raise
+
+        # 4) delete the raw file, keep the processed one
+        await self._storage.delete(stored_raw.name)
+
+        # 5) record the processed video
+        try:
+            async with self._uow_factory() as uow:
+                video = Video(
+                    account_id=account_id,
+                    video_name=Path(filename or "").name[:255],
+                    file_name=processed_name,
+                    title=title,
+                    description=description,
+                )
+                uow.videos.add(video)
+                await uow.commit()
+                return VideoRead.model_validate(video)
+        except Exception:
+            await self._storage.delete(processed_name)
+            raise
+
+    async def _ffmpeg_trim_speed(
+            self,
+            input_path: Path,
+            output_path: Path,
+            start: float,
+            end: float | None,
+            speed: float,
+    ) -> None:
+        """Trim with -ss/-to and change speed with setpts/atempo."""
+        # Build filter for video: setpts=PTS/speed
+        vf = f"setpts=PTS/{speed}"
+        # Audio: atempo can only do 0.5–2.0 per instance; chain if needed
+        atempo = speed
+        af_parts: list[str] = []
+        while atempo > 2.0:
+            af_parts.append("atempo=2.0")
+            atempo /= 2.0
+        while atempo < 0.5:
+            af_parts.append("atempo=0.5")
+            atempo *= 2.0
+        af_parts.append(f"atempo={atempo:.6f}")
+        af = ",".join(af_parts)
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-ss", str(start),
+        ]
+        if end is not None and end > start:
+            cmd += ["-to", str(end)]
+        cmd += [
+            "-i", str(input_path),
+            "-vf", vf,
+            "-af", af,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k",
+            str(output_path),
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise InvalidInputError(f"ffmpeg failed: {stderr.decode()[:300]}")

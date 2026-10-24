@@ -282,7 +282,7 @@
     btn.disabled = true;
     const orig = btn.textContent; btn.textContent = 'Queuing…';
     try {
-      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/post`, {
+      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${id}/drafts`, {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Accept': 'application/json' },
       });
@@ -299,7 +299,7 @@
     btn.disabled = true;
     const orig = btn.textContent; btn.textContent = 'Queuing…';
     try {
-      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/publish`, {
+      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${id}/publish`, {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ method: 'direct', privacy_level: 'SELF_ONLY' }),
@@ -316,8 +316,8 @@
     if (!confirm('Delete this video? The file will be removed from disk.')) return;
     btn.disabled = true;
     try {
-      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${id}/delete`, {
-        method: 'POST', credentials: 'same-origin',
+      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${id}`, {
+        method: 'DELETE', credentials: 'same-origin',
         headers: { 'Accept': 'application/json' },
       });
       if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);

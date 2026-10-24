@@ -1,4 +1,8 @@
 from typing import Annotated
+import asyncio
+import tempfile
+from pathlib import Path
+
 
 from fastapi import APIRouter, File, Form, UploadFile, status
 from fastapi.responses import FileResponse
@@ -97,3 +101,34 @@ async def download_file(
     path = await service.get_file(user_id, account_id, video.file_name)
     media_type, _ = mimetypes.guess_type(path.name)
     return FileResponse(path, media_type=media_type or "application/octet-stream")
+
+
+@router.post(
+    "/processed",
+    response_model=VideoRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a video, trim and change speed with ffmpeg",
+)
+async def upload_processed(
+    account_id: int,
+    user_id: CurrentUserId,
+    service: StudioDep,
+    title: str = Form(...),
+    description: str = Form(""),
+    start: float = Form(0, ge=0),
+    end: float | None = Form(None, ge=0),
+    speed: float = Form(1.0, ge=0.25, le=4.0),
+    file: UploadFile = File(...),
+) -> VideoRead:
+    return await service.upload_video_processed(
+        user_id,
+        account_id,
+        filename=file.filename,
+        content_type=file.content_type,
+        chunks=iter_upload(file),
+        title=title,
+        description=description,
+        start=start,
+        end=end,
+        speed=speed,
+    )

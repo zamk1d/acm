@@ -84,65 +84,99 @@
 </div>
 
 <script>
-const ACCOUNT_ID = {{ account_id }};
+(function () {
+  const ACCOUNT_ID = {{ account_id }};
 
-function readForm() {
-  return {
-    enabled: document.getElementById('enabled').checked,
-    timezone: document.getElementById('timezone').value,
-    posts_per_day: parseInt(document.getElementById('posts_per_day').value, 10),
-    window_start: document.getElementById('window_start').value + ':00',
-    window_end: document.getElementById('window_end').value + ':00',
-    interval_minutes: null,
-    weekdays: [0,1,2,3,4,5,6],
-    method: document.getElementById('method').value,
-    privacy_level: document.getElementById('privacy_level').value,
-    disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: false,
-  };
-}
-
-async function savePlan() {
-  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/plan`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify(readForm()),
-  });
-  if (!r.ok) {
-    const d = await r.json().catch(() => ({}));
-    alert('Save failed: ' + (d.detail || ('HTTP ' + r.status)));
-  } else {
-    alert('Saved.');
+  function _detail(data) {
+    const d = data && data.detail;
+    if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
+    return d;
   }
-}
 
-async function preview() {
-  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/preview`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify(readForm()),
-  });
-  if (!r.ok) return alert('Preview failed');
-  const data = await r.json();
-  document.getElementById('preview').hidden = false;
-  document.getElementById('preview-slots').innerHTML =
-    data.slots.map(s => `<li>${s.local} → ${s.video_title || '—'}</li>`).join('');
-  document.getElementById('preview-warnings').textContent = (data.warnings || []).join(' · ');
-}
+  function readForm() {
+    return {
+      enabled: document.getElementById('enabled').checked,
+      timezone: document.getElementById('timezone').value,
+      posts_per_day: parseInt(document.getElementById('posts_per_day').value, 10),
+      window_start: document.getElementById('window_start').value + ':00',
+      window_end: document.getElementById('window_end').value + ':00',
+      interval_minutes: null,
+      weekdays: [0,1,2,3,4,5,6],
+      method: document.getElementById('method').value,
+      privacy_level: document.getElementById('privacy_level').value,
+      disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: false,
+    };
+  }
 
-async function enqueue(id) {
-  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/queue/${id}/enqueue`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Accept': 'application/json' },
-  });
-  if (r.ok) location.reload(); else alert('Failed');
-}
+  window.savePlan = async function () {
+    try {
+      const r = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/schedule`, {
+        method: 'PUT', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(readForm()),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(_detail(d) || ('HTTP ' + r.status));
+      }
+      alert('Saved.');
+    } catch (e) {
+      alert('Save failed: ' + e.message);
+    }
+  };
 
-async function dequeue(id) {
-  const r = await fetch(`/studio/${ACCOUNT_ID}/schedule/queue/${id}/dequeue`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Accept': 'application/json' },
-  });
-  if (r.ok) location.reload(); else alert('Failed');
-}
+  window.preview = async function () {
+    try {
+      const r = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/schedule/preview`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(readForm()),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(_detail(d) || ('HTTP ' + r.status));
+      }
+      const data = await r.json();
+      document.getElementById('preview').hidden = false;
+      document.getElementById('preview-slots').innerHTML =
+        data.slots.map(s => `<li>${s.local} → ${s.video_title || '—'}</li>`).join('');
+      document.getElementById('preview-warnings').textContent = (data.warnings || []).join(' · ');
+    } catch (e) {
+      alert('Preview failed: ' + e.message);
+    }
+  };
+
+  window.enqueue = async function (id) {
+    try {
+      const r = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/schedule/queue/${id}`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(_detail(d) || ('HTTP ' + r.status));
+      }
+      location.reload();
+    } catch (e) {
+      alert('Enqueue failed: ' + e.message);
+    }
+  };
+
+  window.dequeue = async function (id) {
+    try {
+      const r = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/schedule/queue/${id}`, {
+        method: 'DELETE', credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(_detail(d) || ('HTTP ' + r.status));
+      }
+      location.reload();
+    } catch (e) {
+      alert('Dequeue failed: ' + e.message);
+    }
+  };
+})();
 </script>
 {% endblock %}
