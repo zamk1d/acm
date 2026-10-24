@@ -5,12 +5,22 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from acm.api.session import USER_ID_KEY
+from acm.core.config import Settings
 from acm.core.exceptions import NotAuthenticatedError
 from acm.db.uow import UnitOfWork
 from acm.schemas.user import UserRead
 from acm.services.studio import StudioService
 from acm.services.tiktok import TikTokService
 from acm.services.users import UserService
+from acm.storage import FileStorage
+
+
+def get_settings_dep(request: Request) -> Settings:
+    settings: Settings = request.app.state.settings
+    return settings
+
+
+SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 
 
 def get_uow_factory(request: Request) -> Callable[[], UnitOfWork]:
@@ -21,15 +31,27 @@ def get_uow_factory(request: Request) -> Callable[[], UnitOfWork]:
 UowFactoryDep = Annotated[Callable[[], UnitOfWork], Depends(get_uow_factory)]
 
 
+def get_file_storage(request: Request) -> FileStorage:
+    storage: FileStorage = request.app.state.file_storage
+    return storage
+
+
+FileStorageDep = Annotated[FileStorage, Depends(get_file_storage)]
+
+
 def get_user_service(uow_factory: UowFactoryDep) -> UserService:
     return UserService(uow_factory)
 
 
-def get_tiktok_service(request: Request, uow_factory: UowFactoryDep) -> TikTokService:
-    return TikTokService(uow_factory, request.app.state.tiktok_client)
+def get_tiktok_service(request: Request, uow_factory: UowFactoryDep, storage: FileStorageDep) -> TikTokService:
+    return TikTokService(uow_factory, request.app.state.tiktok_client, storage)
 
-def get_studio_service(request: Request, uow_factory: UowFactoryDep) -> StudioService:
-    return StudioService(uow_factory, request.app.state.tiktok_client)
+
+def get_studio_service(
+    uow_factory: UowFactoryDep, storage: FileStorageDep, settings: SettingsDep
+) -> StudioService:
+    return StudioService(uow_factory, storage, max_upload_bytes=settings.max_upload_bytes)
+
 
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 TikTokServiceDep = Annotated[TikTokService, Depends(get_tiktok_service)]

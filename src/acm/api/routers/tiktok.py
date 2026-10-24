@@ -1,12 +1,11 @@
-import uuid
-
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
-from acm.api.deps import CurrentUserId, TikTokServiceDep
+from acm.api.deps import CurrentUserId, TikTokServiceDep, CurrentUser, SettingsDep
 from acm.api.session import OAUTH_STATE_KEY
 from acm.core.exceptions import InvalidOAuthStateError, OAuthDeniedError
 from acm.core.security import generate_state, states_match
+from acm.schemas.tiktok import TikTokVideoPostRequest
 
 # NOTE: /auth/tiktok/callback is the Redirect URI registered in the TikTok portal.
 router = APIRouter(prefix="/auth/tiktok", tags=["tiktok"])
@@ -59,3 +58,4 @@ async def disconnect(
 ) -> RedirectResponse:
     await service.disconnect(user_id, account_id)
     return RedirectResponse("/dashboard", status_code=303)
+

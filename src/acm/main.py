@@ -1,12 +1,13 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-
+from pathlib import Path
 import httpx
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
 from acm.api.error_handlers import register_exception_handlers
-from acm.api.routers import tiktok, health, pages, users, studio
+from acm.api.routers import health, pages, studio, tiktok, users
+from acm.storage import LocalFileStorage
 from acm.core.config import Settings, get_settings
 from acm.core.logging import configure_logging
 from acm.db.session import create_engine, create_session_factory
@@ -25,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.engine = engine
         app.state.session_factory = create_session_factory(engine)
+        app.state.file_storage = LocalFileStorage(Path(settings.upload_dir))
         app.state.tiktok_client = TikTokClient(
             http,
             TikTokClientConfig(

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
@@ -43,46 +41,42 @@ class TikTokUser(BaseModel):
 
 
 class TikTokVideo(BaseModel):
-    # TikTok добавляет новые поля — не падаем на них
+    """One item of /v2/video/list/. Only requested fields are present, hence all optional."""
+
     model_config = ConfigDict(extra="ignore")
 
     id: str
     title: str = ""
     video_description: str | None = None
-    duration: int | None = Field(default=None, description="Длительность в секундах")
-    cover_image_url: HttpUrl | None = None
+    duration: int | None = Field(default=None, description="Seconds")
+    cover_image_url: HttpUrl | None = None  # expires after a while, re-fetch the list
     share_url: HttpUrl | None = None
     embed_link: HttpUrl | None = None
-
-    # Поля ниже есть не всегда — делаем опциональными
     like_count: int | None = None
     comment_count: int | None = None
     share_count: int | None = None
     view_count: int | None = None
 
 
-class TikTokVideoListData(BaseModel):
+class TikTokVideoPage(BaseModel):
+    """`data` of /v2/video/list/. Default instance = empty page."""
+
     model_config = ConfigDict(extra="ignore")
 
     videos: list[TikTokVideo] = Field(default_factory=list)
-    cursor: int | None = None
+    cursor: int | None = None  # ms timestamp; pass it back to get the next page
     has_more: bool = False
 
-
-class TikTokError(BaseModel):
+class TikTokVideoPost(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    code: str
-    message: str = ""
-    log_id: str | None = None
+    publish_id: str
+    upload_url: str
 
-
-class TikTokVideoList(BaseModel):
+class TikTokPostStatus(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    data: TikTokVideoListData
-    error: TikTokError
-
-    @property
-    def is_ok(self) -> bool:
-        return self.error.code == "ok"
+    status: str
+    fail_reason: str
+    publicaly_available_post_id: list
+    uploaded_bytes: int

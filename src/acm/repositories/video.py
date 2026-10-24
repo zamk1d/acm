@@ -1,60 +1,120 @@
-import uuid
-from pathlib import Path
+from collections.abc import Iterable, Sequence
+from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import select
-from fastapi import HTTPException
-from acm.models import TikTokAccount
-from acm.models.video import Video
+from sqlalchemy import CursorResult, func, or_, select, update
+
+from acm.models.video import ACTIVE_STATUSES, DONE_STATUSES, Video, VideoStatus
 from acm.repositories.base import BaseRepository
 
-UPLOAD_DIR = Path("uploads")
+
+def _values(statuses: Iterable[VideoStatus]) -> list[str]:
+    return [s.value for s in statuses]
 
 
 class VideoRepository(BaseRepository[Video]):
+    """Queries only. Who may see which account is decided by the service, not here."""
+
     model = Video
 
-    async def get_by_name(self, video_name: str, account_id: int) -> list[Video]:
-        result = await self._session.execute(select(Video).where(Video.video_name == video_name, Video.account_id == account_id))
-        return list(result.scalars())
-
-    async def get_by_filename(self, filename: str):
-        result = await self._session.execute(select(Video).where(Video.file_name == filename))
+    async def get_in_account(self, account_id: int, video_id: int) -> Video | None:
+        result = await self._session.execute(
+            select(Video).where(Video.account_id == account_id, Video.id == video_id)
+        )
         return result.scalar_one_or_none()
 
-    async def get_videos_list(self, account_id: int, user_id: uuid.UUID):
-        stmt = (
+    async def get_by_file_name(self, account_id: int, file_name: str) -> Video | None:
+        result = await self._session.execute(
+            select(Video).where(Video.account_id == account_id, Video.file_name == file_name)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_active(self, account_id: int) -> Sequence[Video]:
+        """Everything not yet delivered to TikTok, newest first."""
+        result = await self._session.execute(
             select(Video)
-            .join(TikTokAccount, TikTokAccount.id == Video.account_id)
+            .where(Video.account_id == account_id, Video.status.in_(_values(ACTIVE_STATUSES)))
+            .order_by(Video.created_at.desc(), Video.id.desc())
+        )
+        return result.scalars().all()
+
+    async def list_done(self, account_id: int, limit: int = 10) -> Sequence[Video]:
+        result = await self._session.execute(
+            select(Video)
+            .where(Video.account_id == account_id, Video.status.in_(_values(DONE_STATUSES)))
+            .order_by(Video.published_at.desc(), Video.id.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    # --- queue (scheduler) -----------------------------------------------------------------
+
+    async def list_queue(self, account_id: int) -> Sequence[Video]:
+        result = await self._session.execute(
+            select(Video)
+            .where(Video.account_id == account_id, Video.status == VideoStatus.QUEUED.value)
+            .order_by(Video.queue_position, Video.id)
+        )
+        return result.scalars().all()
+
+    async def queue_head(self, account_id: int) -> Video | None:
+        queue = await self.list_queue(account_id)
+        return queue[0] if queue else None
+
+    async def next_queue_position(self, account_id: int) -> int:
+        result = await self._session.execute(
+            select(func.max(Video.queue_position)).where(
+                Video.account_id == account_id, Video.status == VideoStatus.QUEUED.value
+            )
+        )
+        return (result.scalar_one_or_none() or 0) + 1
+
+    # --- atomic state transitions ------------------------------------------------------------
+    # Plain UPDATE ... WHERE status IN (...) so that two concurrent requests can't both win.
+
+    async def claim(
+        self,
+        account_id: int,
+        video_id: int,
+        *,
+        from_statuses: Iterable[VideoStatus],
+        values: dict[str, Any],
+    ) -> bool:
+        result = await self._session.execute(
+            update(Video)
             .where(
                 Video.account_id == account_id,
-                TikTokAccount.user_id == user_id,
-                Video.status != "published"
+                Video.id == video_id,
+                Video.status.in_(_values(from_statuses)),
             )
-            .order_by(Video.created_at.desc())
+            .values(**values)
+            .execution_options(synchronize_session=False)
         )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        return cast("CursorResult[Any]", result).rowcount == 1
 
-
-    async def get_draft_file(
-            self, account_id: int, user_id: uuid.UUID, file_name: str
-    ) -> Path:
-        stmt = (
-            select(Video.file_name)
-            .join(TikTokAccount, TikTokAccount.id == Video.account_id)
+    async def claim_due_publishing(self, now: datetime, lock_until: datetime, limit: int) -> list[int]:
+        """Videos whose publishing job needs a step now. Locks them so nobody else takes them."""
+        result = await self._session.execute(
+            select(Video.id)
             .where(
-                Video.account_id == account_id,
-                Video.file_name == file_name,
-                TikTokAccount.user_id == user_id,
+                Video.status == VideoStatus.PUBLISHING.value,
+                or_(Video.locked_until.is_(None), Video.locked_until <= now),
             )
+            .order_by(Video.id)
+            .limit(limit)
         )
-        stored = (await self._session.execute(stmt)).scalar_one_or_none()
-        if stored is None:
-            raise HTTPException(status_code=404, detail="File not found")
-
-        upload_dir = Path(UPLOAD_DIR)
-        path = (upload_dir / stored).resolve()
-        upload_root = upload_dir.resolve()
-        if not path.is_relative_to(upload_root) or not path.is_file():
-            raise HTTPException(status_code=404, detail="File not found")
-        return path
+        claimed: list[int] = []
+        for video_id in result.scalars().all():
+            locked = await self._session.execute(
+                update(Video)
+                .where(
+                    Video.id == video_id,
+                    Video.status == VideoStatus.PUBLISHING.value,
+                    or_(Video.locked_until.is_(None), Video.locked_until <= now),
+                )
+                .values(locked_until=lock_until)
+                .execution_options(synchronize_session=False)
+            )
+            if cast("CursorResult[Any]", locked).rowcount == 1:
+                claimed.append(video_id)
+        return claimed

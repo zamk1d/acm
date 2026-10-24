@@ -13,7 +13,7 @@ class BaseRepository[ModelT: Base]:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get(self, entity_id: uuid.UUID) -> ModelT | None:
+    async def get(self, entity_id: int | uuid.UUID) -> ModelT | None:
         return await self._session.get(self.model, entity_id)
 
     def add(self, entity: ModelT) -> None:

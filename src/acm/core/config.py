@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     tiktok_api_base_url: str = "https://open.tiktokapis.com"
     tiktok_http_timeout_seconds: float = 10.0
 
+    upload_dir: str = "uploads"
+    max_upload_bytes: int = 512 * 1024 * 1024
+
     @property
     def tiktok_scope_list(self) -> list[str]:
         return [s.strip() for s in self.tiktok_scopes.split(",") if s.strip()]

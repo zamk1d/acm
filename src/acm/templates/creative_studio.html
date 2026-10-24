@@ -1,18 +1,23 @@
 {% extends "base.html" %}
-{% block title %}Creative · ACM{% endblock %}
+{% block title %}{{ 'Edit video' if video else 'New video' }} · ACM{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Back to studio</a>
-    <h1>Edit video</h1>
-    <p>Add a title and description, then save or publish.</p>
+    <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Studio</a>
+    <h1>{{ 'Edit video' if video else 'New video' }}</h1>
+    <p>Add a title and description, then save as draft or publish.</p>
   </div>
 </div>
 
 <div class="creative-layout">
   <div class="creative-video-col">
     <div class="video-player-wrap">
-      <video id="preview-video" class="video-player" controls playsinline preload="metadata"></video>
+      {% if video %}
+        <video id="preview-video" class="video-player" controls playsinline preload="metadata"
+               src="/studio/{{ account_id }}/files/{{ video.file_name }}"></video>
+      {% else %}
+        <video id="preview-video" class="video-player" controls playsinline preload="metadata"></video>
+      {% endif %}
     </div>
     <div class="video-meta">
       <span class="badge">
@@ -20,23 +25,24 @@
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
         </svg>
-        <span id="file-name">загрузка…</span>
+        <span id="file-name">{{ video.video_name if video else 'loading…' }}</span>
       </span>
-      <span class="badge" id="file-size"></span>
+      {% if video %}<span class="badge status-{{ video.status }}">{{ video.status }}</span>{% endif %}
     </div>
   </div>
 
   <div class="creative-form-col">
     <div class="card">
       <label class="field">
-        <span>Title</span>
-        <input class="input" id="title-input" type="text" maxlength="150"
-               placeholder="Добавьте название" required>
+        <span>Title <small class="dim" id="title-counter">0/255</small></span>
+        <input class="input" id="title-input" type="text" maxlength="255"
+               placeholder="Add a title" required
+               value="{{ video.title if video else '' }}">
       </label>
       <label class="field">
-        <span>Description</span>
-        <textarea class="textarea" id="desc-input" rows="6" maxlength="2200"
-                  placeholder="Опишите ваше видео"></textarea>
+        <span>Description <small class="dim" id="desc-counter">0/255</small></span>
+        <textarea class="textarea" id="desc-input" rows="6" maxlength="255"
+                  placeholder="Describe your video">{{ video.description if video else '' }}</textarea>
       </label>
     </div>
   </div>
@@ -47,6 +53,7 @@
 <div class="row mt-2" style="justify-content:flex-end;gap:.75rem;flex-wrap:wrap">
   <a class="btn" href="/studio/{{ account_id }}" id="cancel-btn">Cancel</a>
   <button class="btn" id="save-btn" type="button">Save draft</button>
+  <button class="btn" id="drafts-btn" type="button" {% if not video %}disabled title="Save first, then post to drafts"{% endif %}>Post to drafts</button>
   <button class="btn btn-primary" id="publish-btn" type="button">Publish</button>
 </div>
 
@@ -57,9 +64,7 @@
     gap: 1.5rem;
     align-items: start;
   }
-  @media (max-width: 800px) {
-    .creative-layout { grid-template-columns: 1fr; }
-  }
+  @media (max-width: 800px) { .creative-layout { grid-template-columns: 1fr; } }
   .creative-video-col { display: flex; flex-direction: column; gap: .75rem; }
   .video-player-wrap {
     background: #000;
@@ -71,14 +76,12 @@
     margin: 0 auto;
     width: 100%;
   }
-  .video-player {
-    width: 100%; height: 100%;
-    object-fit: contain;
-    display: block;
-    background: #000;
-  }
+  .video-player { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
   .video-meta { display: flex; flex-wrap: wrap; gap: .5rem; }
   .creative-form-col .card { position: sticky; top: 5rem; }
+
+  .status-draft     { color: var(--text-muted); }
+  .status-published { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
 
   #status.alert-error {
     background: color-mix(in oklab, var(--danger) 10%, transparent);
@@ -95,15 +98,17 @@
 <script>
 (function () {
   const ACCOUNT_ID = {{ account_id }};
+  const VIDEO_ID   = {{ video.id if video else 'null' }};
   const DB_NAME = 'acm_studio';
   const STORE = 'uploads';
   const token = new URLSearchParams(window.location.search).get('token');
 
   const videoEl    = document.getElementById('preview-video');
   const fileNameEl = document.getElementById('file-name');
-  const fileSizeEl = document.getElementById('file-size');
   const titleInput = document.getElementById('title-input');
   const descInput  = document.getElementById('desc-input');
+  const titleCounter = document.getElementById('title-counter');
+  const descCounter  = document.getElementById('desc-counter');
   const saveBtn    = document.getElementById('save-btn');
   const publishBtn = document.getElementById('publish-btn');
   const cancelBtn  = document.getElementById('cancel-btn');
@@ -119,13 +124,20 @@
     statusEl.hidden = false;
   }
   function hideStatus() { statusEl.hidden = true; }
-
-  function formatSize(bytes) {
-    if (!bytes) return '';
-    const mb = bytes / (1024 * 1024);
-    return mb >= 1 ? mb.toFixed(1) + ' MB' : (bytes / 1024).toFixed(0) + ' KB';
+  function updateCounters() {
+    titleCounter.textContent = `${titleInput.value.length}/255`;
+    descCounter.textContent  = `${descInput.value.length}/255`;
   }
+  titleInput.addEventListener('input', updateCounters);
+  descInput.addEventListener('input', updateCounters);
+  updateCounters();
 
+
+  function _detail(data) {
+          const d = data && data.detail;
+          if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
+          return d;
+        }
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -152,106 +164,167 @@
     });
   }
 
-  function disableActions() {
-    saveBtn.disabled = true;
-    publishBtn.disabled = true;
-  }
-
-  async function load() {
+  async function loadCreateMode() {
     if (!token) {
-      showStatus('Файл не найден. Загрузите видео заново.', 'error');
-      return disableActions();
+      showStatus('File not found. Please upload a video again.', 'error');
+      saveBtn.disabled = true; publishBtn.disabled = true;
+      return;
     }
     try {
       const item = await getFile(token);
       if (!item || !item.file) {
-        showStatus('Видео не найдено в локальном хранилище. Загрузите заново.', 'error');
-        return disableActions();
+        showStatus('Video not found in local storage. Upload again.', 'error');
+        saveBtn.disabled = true; publishBtn.disabled = true;
+        return;
       }
       currentFile = item.file;
       savedId = token;
       currentBlobUrl = URL.createObjectURL(item.file);
       videoEl.src = currentBlobUrl;
       fileNameEl.textContent = item.name;
-      fileSizeEl.textContent = formatSize(item.size);
-      titleInput.value = item.name.replace(/\.[^.]+$/, '').slice(0, 150);
+      if (!titleInput.value) {
+        titleInput.value = item.name.replace(/\.[^.]+$/, '').slice(0, 255);
+        updateCounters();
+      }
     } catch (e) {
       console.error(e);
-      showStatus('Не удалось прочитать файл из локального хранилища.', 'error');
-      disableActions();
+      showStatus('Failed to read the file from local storage.', 'error');
     }
   }
 
-  async function save() {
-    hideStatus();
-    if (!currentFile) return showStatus('Нет файла для сохранения.', 'error');
-
+  async function saveMetadata() {
     const title = titleInput.value.trim();
-    if (!title) {
-      showStatus('Введите название видео.', 'error');
-      titleInput.focus();
-      return;
-    }
     const description = descInput.value.trim();
-
-    saveBtn.disabled = true;
-    const originalText = saveBtn.textContent;
-    saveBtn.textContent = 'Saving…';
+    if (!title) {
+      showStatus('Please add a title.', 'error');
+      titleInput.focus();
+      return null;
+    }
+    hideStatus();
 
     try {
-      const fd = new FormData();
-      fd.append('title', title);
-      fd.append('description', description);
-      fd.append('file', currentFile, currentFile.name);
-
-      const res = await fetch(`/studio/${ACCOUNT_ID}/creative/upload`, {
-        method: 'POST',
-        body: fd,
-        credentials: 'same-origin',
-      });
-
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const data = await res.json();
-          if (data && data.detail) {
-            detail = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
-          }
-        } catch (_) {}
-        throw new Error(detail);
+      if (VIDEO_ID) {
+        const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${VIDEO_ID}/update`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({ title, description }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || `HTTP ${res.status}`);
+        }
+        return VIDEO_ID;
+      } else {
+        if (!currentFile) throw new Error('No file to upload.');
+        const fd = new FormData();
+        fd.append('title', title);
+        fd.append('description', description);
+        fd.append('file', currentFile, currentFile.name);
+        const res = await fetch(`/studio/${ACCOUNT_ID}/creative/upload`, {
+          method: 'POST',
+          body: fd,
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' },
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        await deleteFile(savedId).catch(() => {});
+        savedId = null;
+        return data.id;
       }
-
-      await deleteFile(savedId);
-      savedId = null;
-      showStatus('Сохранено. Перенаправляем…', 'success');
-      setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 400);
     } catch (e) {
       console.error(e);
-      showStatus('Ошибка сохранения: ' + e.message, 'error');
-      saveBtn.disabled = false;
-      saveBtn.textContent = originalText;
+      showStatus('Save failed: ' + e.message, 'error');
+      return null;
     }
   }
 
-  async function cancel() {
-    if (savedId) { try { await deleteFile(savedId); } catch (_) {} }
+  async function save(asPublish) {
+    hideStatus();
+    saveBtn.disabled = true;
+    publishBtn.disabled = true;
+    const which = asPublish ? publishBtn : saveBtn;
+    const orig = which.textContent;
+    which.textContent = asPublish ? 'Publishing…' : 'Saving…';
+
+    const vid = await saveMetadata();
+    if (!vid) {
+      saveBtn.disabled = false; publishBtn.disabled = false;
+      which.textContent = orig;
+      return;
+    }
+
+    if (asPublish) {
+      try {
+        const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${vid}/publish`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ post_info: {}, source_info: {} }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(_detail(data) || `HTTP ${res.status}`);
+        }
+      } catch (e) {
+        showStatus('Publish failed: ' + e.message, 'error');
+        saveBtn.disabled = false; publishBtn.disabled = false;
+        publishBtn.textContent = orig;
+        return;
+      }
+    }
+
+    showStatus(asPublish ? 'Published. Redirecting…' : 'Saved. Redirecting…', 'success');
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
-    window.location.href = `/studio/${ACCOUNT_ID}`;
+    setTimeout(() => { window.location.href = `/studio/${ACCOUNT_ID}`; }, 400);
   }
 
-  saveBtn.addEventListener('click', save);
-  publishBtn.addEventListener('click', () => {
-    showStatus('Публикация пока не реализована.', 'error');
+  saveBtn.addEventListener('click', () => save(false));
+  publishBtn.addEventListener('click', () => save(true));
+  const draftsBtn = document.getElementById('drafts-btn');
+  draftsBtn.addEventListener('click', async () => {
+    if (!VIDEO_ID) return;
+    if (!confirm('Send this video to your TikTok drafts? You will finish it in the TikTok app.')) return;
+    hideStatus();
+    draftsBtn.disabled = true;
+    const original = draftsBtn.textContent;
+    draftsBtn.textContent = 'Uploading…';
+    try {
+      const res = await fetch(`/studio/${ACCOUNT_ID}/videos/${VIDEO_ID}/post`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(_detail(data) || `HTTP ${res.status}`);
+      }
+      showStatus('Sent to TikTok drafts. Open the TikTok app to finish and publish it.', 'success');
+    } catch (e) {
+      showStatus('Upload to drafts failed: ' + e.message, 'error');
+    } finally {
+      draftsBtn.disabled = false;
+      draftsBtn.textContent = original;
+    }
   });
   cancelBtn.addEventListener('click', async (e) => {
     e.preventDefault();
-    await cancel();
+    if (savedId) { try { await deleteFile(savedId); } catch (_) {} }
+    if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
+    window.location.href = `/studio/${ACCOUNT_ID}`;
   });
   window.addEventListener('beforeunload', () => {
     if (currentBlobUrl) URL.revokeObjectURL(currentBlobUrl);
   });
 
-  load();
+  if (!VIDEO_ID) loadCreateMode();
 })();
 </script>
 {% endblock %}

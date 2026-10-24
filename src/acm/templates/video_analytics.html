@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Analytics · ACM{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a href="/studio/{{ account_id }}" class="btn btn-ghost btn-sm" style="padding-left:0;margin-bottom:.5rem">← Studio</a>
+    <h1>{{ video.title if video else 'Video analytics' }}</h1>
+    <p>{% if video %}Local draft{% else %}Published on TikTok{% endif %}</p>
+  </div>
+</div>
+
+<div class="analytics-layout">
+  {% if video %}
+    <div class="card">
+      <div style="background:#000;border-radius:var(--radius);overflow:hidden;aspect-ratio:9/16;max-height:70vh;margin:0 auto">
+        <video controls playsinline preload="metadata"
+               style="width:100%;height:100%;object-fit:contain;display:block">
+          <source src="/studio/{{ account_id }}/files/{{ video.file_name }}">
+        </video>
+      </div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:1rem">Overview</h2>
+      <dl>
+        <dt>Status</dt>
+        <dd><span class="badge status-{{ video.status }}">{{ video.status }}</span></dd>
+        <dt>File</dt>
+        <dd class="mono">{{ video.video_name }}</dd>
+        <dt>Description</dt>
+        <dd>{{ video.description or '—' }}</dd>
+        <dt>Created</dt>
+        <dd>{{ video.created_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
+        <dt>Updated</dt>
+        <dd>{{ video.updated_at.strftime("%Y-%m-%d %H:%M UTC") }}</dd>
+      </dl>
+      <div class="row mt-3">
+        <a class="btn btn-primary btn-sm" href="/studio/{{ account_id }}/creative?id={{ video.id }}">Edit draft</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="card" style="grid-column:1/-1">
+      <h2 style="margin-bottom:1rem">TikTok video</h2>
+      <dl>
+        <dt>Video ID</dt><dd class="mono">{{ tiktok_video_id }}</dd>
+        <dt>Account</dt><dd>#{{ account_id }}</dd>
+      </dl>
+      <p class="dim text-sm mt-2">
+        Metadata &amp; thumbnail will appear here once TikTok insights are wired in.
+      </p>
+    </div>
+  {% endif %}
+</div>
+
+<div class="card mt-2">
+  <h2 style="margin-bottom:1rem">Analytics</h2>
+  <div class="empty">
+    <h3>Coming soon</h3>
+    <p>Views, watch time, engagement, and comments will appear here.</p>
+  </div>
+</div>
+
+<style>
+  .analytics-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 800px) { .analytics-layout { grid-template-columns: 1fr; } }
+
+  .status-draft     { color: var(--text-muted); }
+  .status-published { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
+  .status-failed    { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); }
+</style>
+{% endblock %}

@@ -1,11 +1,15 @@
 import uuid
 from datetime import datetime, timedelta
-
+from datetime import UTC, datetime, timedelta
 from sqlalchemy import DateTime, String, Text, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from acm.db.base import Base, TimestampMixin
 
+
+def _as_utc(value: datetime) -> datetime:
+    """Postgres returns aware datetimes; SQLite (used in tests) returns naive UTC ones."""
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 class TikTokAccount(Base, TimestampMixin):
     __tablename__ = "tiktok_accounts"
@@ -38,7 +42,8 @@ class TikTokAccount(Base, TimestampMixin):
     refresh_token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
     def is_access_token_expired(self, now: datetime, leeway: timedelta = timedelta(0)) -> bool:
-        return self.access_token_expires_at <= now + leeway
+        return _as_utc(self.access_token_expires_at) <= now + leeway
 
     def is_refresh_token_expired(self, now: datetime) -> bool:
-        return self.refresh_token_expires_at <= now
+        return _as_utc(self.refresh_token_expires_at) <= now
+

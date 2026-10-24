@@ -54,3 +54,26 @@ class InvalidCredentialsError(AppError):
 class AccountAlreadyLinkedError(AppError):
     status_code = 409
     default_message = "This TikTok account is already linked to another user"
+
+class VideoNotFoundError(AppError):
+    status_code = 404
+    default_message = "Video not found"
+
+
+class FileTooLargeError(AppError):
+    status_code = 413
+    default_message = "File is too large"
+
+
+class UnsupportedMediaTypeError(AppError):
+    status_code = 415
+    default_message = "Unsupported file type"
+
+
+class ReauthorizationRequiredError(AppError):
+    status_code = 409
+    default_message = "TikTok authorization expired. Please reconnect the account."
+
+class PublishNotImplementedError(AppError):
+    status_code = 501
+    default_message = "Video publishing is not implemented yet"

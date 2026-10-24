@@ -1,10 +1,14 @@
-import uuid
-from datetime import datetime, timedelta
+from enum import StrEnum
 
-from sqlalchemy import DateTime, String, Text, ForeignKey, Integer
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from acm.db.base import Base, TimestampMixin
+
+
+class VideoStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
 
 
 class Video(Base, TimestampMixin):
@@ -14,8 +18,8 @@ class Video(Base, TimestampMixin):
     account_id: Mapped[int] = mapped_column(
         ForeignKey("tiktok_accounts.id", ondelete="CASCADE"), index=True
     )
-    video_name: Mapped[str] = mapped_column(String(255), unique=False)
-    file_name: Mapped[str] = mapped_column(String(255), unique=True)
-    status: Mapped[str] = mapped_column(String(255), default="draft")
+    video_name: Mapped[str] = mapped_column(String(255))  # original file name, for display
+    file_name: Mapped[str] = mapped_column(String(255), unique=True)  # name on disk
+    status: Mapped[str] = mapped_column(String(32), default=VideoStatus.DRAFT.value)
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(String(255))
