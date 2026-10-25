@@ -7,114 +7,213 @@
     <h1>{% if analytics %}{{ analytics.video.title or 'Video' }}{% elif video %}{{ video.title or 'Video' }}{% else %}Video{% endif %}</h1>
     <p>{% if analytics %}Published on TikTok{% elif video %}Local draft{% endif %}</p>
   </div>
-  {% if analytics and analytics.video.embed_link %}
-    <a class="btn" href="{{ analytics.video.embed_link }}" target="_blank" rel="noopener">Open on TikTok ↗</a>
+  {% if analytics and analytics.video.share_url %}
+    <a class="btn" href="{{ analytics.video.share_url }}" target="_blank" rel="noopener">Open on TikTok ↗</a>
   {% endif %}
 </div>
 
-{% if analytics %}
-  <div class="stats-grid">
-    <div class="card stat">
-      <div class="stat-label">Views</div>
-      <div class="stat-value">{{ '{:,}'.format(analytics.video.view_count or 0) }}</div>
-      {% if analytics.views_24h is not none %}<div class="stat-delta">+{{ '{:,}'.format(analytics.views_24h) }} last 24h</div>{% endif %}
-    </div>
-    <div class="card stat">
-      <div class="stat-label">Likes</div>
-      <div class="stat-value">{{ '{:,}'.format(analytics.video.like_count or 0) }}</div>
-      {% if analytics.likes_24h is not none %}<div class="stat-delta">+{{ '{:,}'.format(analytics.likes_24h) }} last 24h</div>{% endif %}
-    </div>
-    <div class="card stat">
-      <div class="stat-label">Comments</div>
-      <div class="stat-value">{{ '{:,}'.format(analytics.video.comment_count or 0) }}</div>
-      {% if analytics.comments_24h is not none %}<div class="stat-delta">+{{ '{:,}'.format(analytics.comments_24h) }} last 24h</div>{% endif %}
-    </div>
-    <div class="card stat">
-      <div class="stat-label">Shares</div>
-      <div class="stat-value">{{ '{:,}'.format(analytics.video.share_count or 0) }}</div>
-      {% if analytics.shares_24h is not none %}<div class="stat-delta">+{{ '{:,}'.format(analytics.shares_24h) }} last 24h</div>{% endif %}
-    </div>
-  </div>
-
-  <div class="card mt-2">
-    <h2 style="margin-bottom:1rem">Engagement</h2>
-    <dl>
-      {% if analytics.engagement_rate is not none %}<dt>Engagement rate</dt><dd>{{ '%.2f' % analytics.engagement_rate }}%</dd>{% endif %}
-      {% if analytics.like_rate is not none %}<dt>Like rate</dt><dd>{{ '%.2f' % analytics.like_rate }}%</dd>{% endif %}
-      {% if analytics.comment_rate is not none %}<dt>Comment rate</dt><dd>{{ '%.2f' % analytics.comment_rate }}%</dd>{% endif %}
-      {% if analytics.share_rate is not none %}<dt>Share rate</dt><dd>{{ '%.2f' % analytics.share_rate }}%</dd>{% endif %}
-      {% if analytics.age_days is not none %}<dt>Age</dt><dd>{{ '%.1f' % analytics.age_days }} days</dd>{% endif %}
-      {% if analytics.views_per_day is not none %}<dt>Views / day</dt><dd>{{ '{:,.0f}'.format(analytics.views_per_day) }}</dd>{% endif %}
-    </dl>
-  </div>
-
-  {% if analytics.history %}
-  <div class="card mt-2">
-    <h2 style="margin-bottom:1rem">History ({{ analytics.history|length }} snapshots)</h2>
-    <table class="history">
-      <thead><tr><th>When</th><th>Views</th><th>Likes</th><th>Comments</th><th>Shares</th></tr></thead>
-      <tbody>
-        {% for p in analytics.history %}
-          <tr>
-            <td class="mono">{{ p.at.strftime("%Y-%m-%d %H:%M") }}</td>
-            <td>{{ '{:,}'.format(p.views) }}</td>
-            <td>{{ '{:,}'.format(p.likes) }}</td>
-            <td>{{ '{:,}'.format(p.comments) }}</td>
-            <td>{{ '{:,}'.format(p.shares) }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
-{% elif video %}
-  <div class="card">
-    <h2 style="margin-bottom:1rem">Local draft</h2>
-    <dl>
-      <dt>Status</dt>
-      <dd><span class="badge status-{{ video.status }}">{{ video.status }}</span></dd>
-      <dt>File</dt>
-      <dd class="mono">{{ video.video_name }}</dd>
-      <dt>Description</dt>
-      <dd>{{ video.description or '—' }}</dd>
-      {% if video.error %}<dt>Error</dt><dd style="color:var(--danger)">{{ video.error }}</dd>{% endif %}
-    </dl>
-    {% if video.file_name %}
-      <div style="background:#000;border-radius:var(--radius);overflow:hidden;aspect-ratio:9/16;max-height:60vh;margin:1rem auto 0;max-width:340px">
-        <video controls playsinline preload="metadata" style="width:100%;height:100%;object-fit:contain;display:block">
+<div class="analytics-grid">
+  <!-- Левая колонка: Плеер -->
+  <div class="player-col">
+    <div class="video-card" style="padding:0; overflow:hidden; border-radius:var(--radius-lg); background:#000">
+      {% if video and video.file_name %}
+        <!-- Локальный драфт: используем HTML5 video -->
+        <video controls playsinline preload="metadata" style="width:100%; display:block; aspect-ratio:9/16; object-fit:contain; max-height: 70vh;">
           <source src="/studio/{{ account_id }}/files/{{ video.file_name }}">
+          Your browser does not support the video tag.
         </video>
+      {% elif analytics and analytics.video.embed_link %}
+        <!-- Опубликованное видео: используем официальный embed от TikTok -->
+        <iframe src="{{ analytics.video.embed_link }}"
+                style="width:100%; height:100%; min-height: 600px; border:none;"
+                allow="encrypted-media;"
+                allowfullscreen>
+        </iframe>
+      {% else %}
+        <!-- Нет видео (например, аналитика без плеера) -->
+        <div class="empty" style="aspect-ratio:9/16; display:flex; flex-direction:column; justify-content:center;">
+          <h3>Video not available</h3>
+          <p>The file has been archived or removed.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Правая колонка: Метрики и Графики -->
+  <div class="stats-col">
+    {% if analytics %}
+      <div class="stats-grid">
+        <div class="card stat">
+          <div class="stat-label">Views</div>
+          <div class="stat-value">{{ '{:,}'.format(analytics.video.view_count or 0) }}</div>
+          {% if analytics.views_24h is not none %}<div class="stat-delta">+{{ '{:,}'.format(analytics.views_24h) }} last 24h</div>{% endif %}
+        </div>
+        <div class="card stat">
+          <div class="stat-label">Likes</div>
+          <div class="stat-value">{{ '{:,}'.format(analytics.video.like_count or 0) }}</div>
+          {% if analytics.likes_24h is not none %}<div class="stat-delta">+{{ '{:,}'.format(analytics.likes_24h) }} last 24h</div>{% endif %}
+        </div>
+        <div class="card stat">
+          <div class="stat-label">Comments</div>
+          <div class="stat-value">{{ '{:,}'.format(analytics.video.comment_count or 0) }}</div>
+        </div>
+        <div class="card stat">
+          <div class="stat-label">Shares</div>
+          <div class="stat-value">{{ '{:,}'.format(analytics.video.share_count or 0) }}</div>
+        </div>
+      </div>
+
+      <div class="card mt-2">
+        <h2 style="margin-bottom:1rem">Engagement</h2>
+        <dl style="grid-template-columns: auto 1fr auto 1fr;">
+          {% if analytics.engagement_rate is not none %}<dt>Engagement</dt><dd>{{ '%.2f' % analytics.engagement_rate }}%</dd>{% endif %}
+          {% if analytics.views_per_day is not none %}<dt>Views / day</dt><dd>{{ '{:,.0f}'.format(analytics.views_per_day) }}</dd>{% endif %}
+        </dl>
+      </div>
+
+      {% if history_json %}
+      <div class="card mt-2">
+        <h2 style="margin-bottom:1rem">Metrics over time</h2>
+        <div style="position: relative; height:300px; width:100%">
+          <canvas id="metricsChart"></canvas>
+        </div>
+      </div>
+      {% endif %}
+
+    {% elif video %}
+      <div class="card">
+        <h2 style="margin-bottom:1rem">Local draft</h2>
+        <dl>
+          <dt>Status</dt>
+          <dd><span class="badge status-{{ video.status }}">{{ video.status }}</span></dd>
+          <dt>File</dt>
+          <dd class="mono">{{ video.video_name }}</dd>
+          <dt>Description</dt>
+          <dd>{{ video.description or '—' }}</dd>
+        </dl>
+        <div class="row mt-3">
+          <a class="btn btn-primary btn-sm" href="/studio/{{ account_id }}/creative?id={{ video.id }}">Edit draft</a>
+        </div>
+      </div>
+      <div class="card mt-2">
+        <p class="dim">Analytics will appear once the video is published to TikTok.</p>
       </div>
     {% endif %}
-    <div class="row mt-3">
-      <a class="btn btn-primary btn-sm" href="/studio/{{ account_id }}/creative?id={{ video.id }}">Edit draft</a>
-    </div>
   </div>
-  <div class="card mt-2">
-    <p class="dim">Analytics will appear once the video is published to TikTok.</p>
-  </div>
-{% else %}
-  <div class="card">
-    <p class="muted">TikTok video ID: <span class="mono">{{ tiktok_video_id }}</span></p>
-    <p class="dim text-sm">Metadata will appear once TikTok insights are wired in.</p>
-  </div>
-{% endif %}
+</div>
 
 <style>
-  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: minmax(300px, 1fr) minmax(0, 1.5fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 800px) {
+    .analytics-grid { grid-template-columns: 1fr; }
+  }
+  .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
   .stat { display: flex; flex-direction: column; gap: .25rem; }
   .stat-label { color: var(--text-dim); font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
   .stat-value { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.03em; }
   .stat-delta { color: var(--success); font-size: .8rem; }
-  .history { width: 100%; border-collapse: collapse; font-size: .85rem; }
-  .history th, .history td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); text-align: left; }
-  .history th { color: var(--text-dim); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
-  .status-draft      { color: var(--text-muted); }
-  .status-queued     { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
-  .status-publishing { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
-  .status-published  { color: var(--success); border-color: color-mix(in oklab, var(--success) 40%, transparent); }
-  .status-inbox      { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
-  .status-failed     { color: var(--danger); border-color: color-mix(in oklab, var(--danger) 40%, transparent); }
 </style>
+
+{% if history_json %}
+<!-- Подключаем Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  (function () {
+    const data = {{ history_json | tojson }};
+
+    // Преобразуем ISO время в читаемый формат (например, "14:30")
+    const labels = data.map(p => {
+      const d = new Date(p.at);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    });
+
+    const views = data.map(p => p.views);
+    const likes = data.map(p => p.likes);
+    const comments = data.map(p => p.comments);
+    const shares = data.map(p => p.shares);
+
+    const ctx = document.getElementById('metricsChart').getContext('2d');
+
+    // Настройки для темной/светлой темы
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const textColor = isDark ? '#a1a1aa' : '#52525b';
+    const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Views',
+            data: views,
+            borderColor: '#fe2c55', // TikTok Pink
+            backgroundColor: 'rgba(254, 44, 85, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Likes',
+            data: likes,
+            borderColor: '#25f4ee', // TikTok Cyan
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        plugins: {
+          legend: { labels: { color: textColor } },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                let label = context.dataset.label || '';
+                if (label) label += ': ';
+                if (context.parsed.y !== null) {
+                  label += new Intl.NumberFormat().format(context.parsed.y);
+                }
+                return label;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: textColor, maxTicksLimit: 5 },
+            grid: { color: gridColor }
+          },
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            ticks: { color: textColor },
+            grid: { color: gridColor }
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            ticks: { color: textColor },
+            grid: { drawOnChartArea: false } // Сетка только для оси Y (Views)
+          }
+        }
+      }
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

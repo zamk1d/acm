@@ -70,6 +70,10 @@ async def creative_studio(
     )
 
 
+# src/acm/api/routers/studio.py
+
+# ... импорты ...
+
 @router.get("/videos/{video_id}", response_class=HTMLResponse)
 async def draft_analytics(
     request: Request,
@@ -88,9 +92,9 @@ async def draft_analytics(
             "video": video,
             "tiktok_video_id": None,
             "analytics": None,
+            "history_json": [], # Пустая история для драфтов
         },
     )
-
 
 @router.get("/tiktok/{tiktok_video_id}", response_class=HTMLResponse)
 async def tiktok_video_analytics(
@@ -110,6 +114,8 @@ async def tiktok_video_analytics(
             "video": None,
             "tiktok_video_id": tiktok_video_id,
             "analytics": data,
+            # Передаем историю как список словарей для Chart.js
+            "history_json": [p.model_dump(mode="json") for p in data.history],
         },
     )
 
