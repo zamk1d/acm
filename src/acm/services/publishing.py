@@ -56,7 +56,7 @@ _SCOPE_FOR_METHOD = {
     PublishMethod.DIRECT: SCOPE_VIDEO_PUBLISH,
     PublishMethod.DRAFT: SCOPE_VIDEO_UPLOAD,
 }
-_STARTABLE = {s.value for s in STARTABLE_STATUSES}
+_STARTABLE = {s.value for s in STARTABLE_STATUSES} | {VideoStatus.QUEUED.value}
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,10 +115,10 @@ class PublishingService:
             options = await self._apply_creator_limits(user_id, account_id, options)
 
         async with self._uow_factory() as uow:
-            claimed = await uow.videos.claim(  # atomic: of two simultaneous clicks only one wins
+            claimed = await uow.videos.claim(
                 account_id,
                 video_id,
-                from_statuses=STARTABLE_STATUSES,
+                from_statuses=(*STARTABLE_STATUSES, VideoStatus.QUEUED),  # <-- добавили QUEUED
                 values={
                     "status": VideoStatus.PUBLISHING.value,
                     "publish_options": options.model_dump(mode="json"),

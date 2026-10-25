@@ -213,6 +213,7 @@ class SchedulerService:
             if head is None or account is None:
                 return False
             video_id, user_id = head.id, account.user_id
+
         options = PublishOptions(
             method=PublishMethod(plan.method),
             privacy_level=plan.privacy_level,
@@ -225,7 +226,7 @@ class SchedulerService:
             await self._publishing.start(user_id, plan.account_id, video_id, options)
         except AppError as exc:
             logger.warning("Scheduled publish failed video_id=%s: %s", video_id, exc.message)
-            await self._publishing.fail_video(video_id, exc.message)
+            # Не переводим в FAILED, просто логируем. Планировщик попробует в следующий слот.
             return False
         return True
 

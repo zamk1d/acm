@@ -21,11 +21,14 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "mypy>=1.13",
-    "pytest>=8.3",
-    "pytest-asyncio>=0.24",
-    "ruff>=0.8",
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "aiosqlite",    # для быстрых in-memory тестов БД
+    "pytest-mock",
+    "pytest-cov>=7.1.0",
 ]
+
 
 [build-system]
 requires = ["hatchling"]
@@ -35,7 +38,11 @@ build-backend = "hatchling.build"
 packages = ["src/acm"]
 
 [tool.pytest.ini_options]
+# Автоматически распознавать async def тесты
 asyncio_mode = "auto"
+# Чтобы pytest видел твой пакет acm из папки src
+pythonpath = ["src"]
+# Где искать тесты
 testpaths = ["tests"]
 
 [tool.ruff]

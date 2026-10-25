@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     secret_key: SecretStr
     session_https_only: bool = True
     session_max_age_seconds: int = 60 * 60 * 24 * 14
-
+    run_worker: bool = True
     # database
     database_url: str
     telegram_bot_token: SecretStr | None = None

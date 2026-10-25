@@ -17,8 +17,8 @@ class VideoUpdateRequest(BaseModel):
     description: str = Field(default="", max_length=255)
 
 
-class VideoUrlRequest(BaseModel):
-    url: str = Field(min_length=8, max_length=2048)
+# class VideoUrlRequest(BaseModel):
+#     url: str = Field(min_length=8, max_length=2048)
 
 
 class ImportProgress(BaseModel):
@@ -86,3 +86,28 @@ class VideoListRead(BaseModel):
     status: str
     title: str
     description: str | None = None
+
+class AudioTrackRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    language: str
+    language_name: str
+    format_id: str
+    is_original: bool = False
+
+
+class VideoProbeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    title: str
+    duration: float | None = None
+    audio_tracks: list[AudioTrackRead] = []
+    default_language: str | None = None
+
+
+class VideoUrlProbeRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+
+
+class VideoUrlRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+    audio_language: str | None = None
+    metadata_language: str | None = None

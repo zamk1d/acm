@@ -30,68 +30,25 @@
     </div>
   </div>
   <p id="dropzone-error" class="dropzone-error" hidden></p>
-  {# Вставить в studio.html сразу ПОД dropzone (не внутри него, иначе клик откроет выбор файла). #}
-  {# Вставить в studio.html сразу ПОД dropzone (не внутри него, иначе клик откроет выбор файла). #}
-  <form id="yt-form" class="row" style="margin-top:.75rem;flex-wrap:nowrap">
+
+  <hr class="divider">
+  <h3 style="margin-bottom:.6rem">…or import from YouTube</h3>
+  <form id="yt-form" class="row" style="flex-wrap:nowrap">
     <input class="input" id="yt-url" type="url" required
-           placeholder="…or paste a YouTube link" aria-label="YouTube link">
-    <button class="btn btn-primary" id="yt-btn" type="submit">Apply</button>
+           placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link">
+    <button class="btn" id="yt-check" type="button">Check</button>
+    <button class="btn btn-primary" id="yt-apply" type="submit">Apply</button>
   </form>
+  <div id="yt-audio-row" hidden style="margin-top:.75rem">
+    <label class="field" style="margin-bottom:.5rem">
+      <span>Audio track</span>
+      <select class="input" id="yt-audio"></select>
+    </label>
+    <p class="dim text-sm" style="margin-top:-.35rem">
+      The video title will be taken in the same language when YouTube has it.
+    </p>
+  </div>
   <div id="yt-error" class="alert alert-error" hidden style="margin-top:.5rem"></div>
-
-  <script>
-  (function () {
-    const API = '/api/v1/accounts/{{ account_id }}/videos';
-    const form = document.getElementById('yt-form');
-    const btn = document.getElementById('yt-btn');
-    const err = document.getElementById('yt-error');
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-    const detail = (d) => Array.isArray(d) ? d.map(x => x.msg).join('; ') : d;
-
-    async function call(url, init) {
-      const res = await fetch(url, { credentials: 'same-origin', ...init,
-        headers: { 'Accept': 'application/json', ...((init && init.headers) || {}) } });
-      const data = res.status === 204 ? null : await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(detail(data && data.detail) || `HTTP ${res.status}`);
-      return data;
-    }
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      err.hidden = true;
-      btn.disabled = true;
-      btn.textContent = 'Starting…';
-      try {
-        // returns immediately: the server downloads in the background
-        const video = await call(API + '/from-url', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: document.getElementById('yt-url').value.trim() }),
-        });
-        for (;;) {
-          const p = await call(`${API}/${video.id}/import`);
-          if (p.status === 'draft') {
-            window.location.href = `/studio/{{ account_id }}/creative?id=${video.id}`;
-            return;
-          }
-          if (p.status === 'failed') {
-            await call(`${API}/${video.id}`, { method: 'DELETE' }).catch(() => {});
-            throw new Error(p.error || 'Download failed');
-          }
-          btn.textContent = p.percent ? `Downloading… ${p.percent}%` : 'Downloading…';
-          await sleep(1000);
-        }
-      } catch (ex) {
-        err.textContent = ex.message;
-        err.hidden = false;
-        btn.disabled = false;
-        btn.textContent = 'Apply';
-      }
-    });
-  })();
-  </script>
-
-{# Статус "downloading" теперь виден в workspace: добавь в CSS рядом с остальными .status-*:
-   .status-downloading { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); } #}
 </div>
 
 <div class="card mt-2">
@@ -234,6 +191,7 @@
 
   .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+  .status-downloading { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
   .status-draft      { color: var(--text-muted); }
   .status-queued     { color: var(--accent-2); border-color: color-mix(in oklab, var(--accent-2) 40%, transparent); }
   .status-publishing { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
@@ -244,27 +202,44 @@
   @media (max-width: 600px) {
     .dropzone { flex-direction: column; text-align: center; }
     .dropzone-text { text-align: center; }
+    #yt-form { flex-wrap: wrap !important; }
   }
 </style>
 
 <script>
 (function () {
   const ACCOUNT_ID = {{ account_id }};
+  const API = `/api/v1/accounts/${ACCOUNT_ID}/videos`;
   const DB_NAME = 'acm_studio';
   const STORE = 'uploads';
   const MAX_SIZE = {{ max_upload_mb or 500 }} * 1024 * 1024;
   const ALLOWED = ['video/mp4', 'video/quicktime', 'video/webm'];
   const STALE_MS = 60 * 60 * 1000;
 
-  const dropzone = document.getElementById('dropzone');
-  const input = document.getElementById('file-input');
-  const errEl = document.getElementById('dropzone-error');
+  const $ = (id) => document.getElementById(id);
+  const dropzone = $('dropzone');
+  const input = $('file-input');
+  const errEl = $('dropzone-error');
 
   function _detail(data) {
     const d = data && data.detail;
     if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
     return d;
   }
+  async function api(url, init) {
+    const res = await fetch(url, {
+      credentials: 'same-origin',
+      headers: { 'Accept': 'application/json', ...((init && init.headers) || {}) },
+      ...init,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(_detail(data) || `HTTP ${res.status}`);
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  // ── Local upload dropzone ──────────────────────────
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -339,16 +314,112 @@
     if (file) handleFile(file);
   });
 
+  // ── YouTube import ────────────────────────────────
+  const ytForm = $('yt-form'), ytUrl = $('yt-url');
+  const ytCheck = $('yt-check'), ytApply = $('yt-apply');
+  const ytAudio = $('yt-audio'), ytAudioRow = $('yt-audio-row');
+  const ytError = $('yt-error');
+  let ytProbed = false;
+
+  function ytShowError(msg) { ytError.textContent = msg; ytError.hidden = false; }
+  function ytClearError() { ytError.hidden = true; }
+  function ytResetAudio() {
+    ytAudio.replaceChildren();
+    ytAudioRow.hidden = true;
+    ytProbed = false;
+  }
+
+  async function ytDoProbe() {
+    const url = ytUrl.value.trim();
+    if (!url) return;
+    ytClearError();
+    ytResetAudio();
+    ytCheck.disabled = true;
+    const orig = ytCheck.textContent;
+    ytCheck.textContent = 'Checking…';
+    try {
+      const probe = await api(`${API}/probe-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const tracks = probe.audio_tracks || [];
+      if (!tracks.length) {
+        ytAudioRow.hidden = true;
+        ytProbed = true;
+        return;
+      }
+      for (const t of tracks) {
+        const opt = document.createElement('option');
+        opt.value = t.language;
+        opt.textContent = `${t.language_name}${t.is_original ? ' · original' : ''}`;
+        ytAudio.appendChild(opt);
+      }
+      if (probe.default_language) ytAudio.value = probe.default_language;
+      ytAudioRow.hidden = false;
+      ytProbed = true;
+    } catch (e) {
+      ytShowError('Check failed: ' + e.message);
+    } finally {
+      ytCheck.disabled = false;
+      ytCheck.textContent = orig;
+    }
+  }
+
+  ytCheck.addEventListener('click', ytDoProbe);
+  ytUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); ytDoProbe(); }
+  });
+
+  ytForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const url = ytUrl.value.trim();
+    if (!url) return;
+    ytClearError();
+    ytApply.disabled = true;
+    ytCheck.disabled = true;
+    const orig = ytApply.textContent;
+    ytApply.textContent = 'Starting…';
+    try {
+      const payload = { url };
+      if (ytProbed && !ytAudioRow.hidden && ytAudio.value) {
+        payload.audio_language = ytAudio.value;
+        payload.metadata_language = ytAudio.value;
+      }
+      const video = await api(`${API}/from-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      // poll until draft / failed
+      for (;;) {
+        const p = await api(`${API}/${video.id}/import`);
+        if (p.status === 'draft') {
+          window.location.href = `/studio/${ACCOUNT_ID}/creative?id=${video.id}`;
+          return;
+        }
+        if (p.status === 'failed') {
+          await api(`${API}/${video.id}`, { method: 'DELETE' }).catch(() => {});
+          throw new Error(p.error || 'Download failed');
+        }
+        ytApply.textContent = p.percent ? `Downloading… ${p.percent}%` : 'Downloading…';
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    } catch (ex) {
+      ytShowError(ex.message);
+      ytApply.disabled = false;
+      ytApply.textContent = orig;
+      ytCheck.disabled = false;
+    }
+  });
+
+  // ── Workspace actions ────────────────────────────
   window.postToDrafts = async function (id, btn) {
     if (!confirm('Send to TikTok drafts? You will finish it in the TikTok app.')) return;
     btn.disabled = true;
     const orig = btn.textContent; btn.textContent = 'Queuing…';
     try {
-      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${id}/drafts`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Accept': 'application/json' },
-      });
-      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(_detail(data) || `HTTP ${res.status}`); }
+      await api(`${API}/${id}/drafts`, { method: 'POST' });
       window.location.reload();
     } catch (e) {
       alert('Post failed: ' + e.message);
@@ -361,12 +432,11 @@
     btn.disabled = true;
     const orig = btn.textContent; btn.textContent = 'Queuing…';
     try {
-      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${id}/publish`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      await api(`${API}/${id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ method: 'direct', privacy_level: 'SELF_ONLY' }),
       });
-      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(_detail(data) || `HTTP ${res.status}`); }
       window.location.reload();
     } catch (e) {
       alert('Publish failed: ' + e.message);
@@ -378,11 +448,7 @@
     if (!confirm('Delete this video? The file will be removed from disk.')) return;
     btn.disabled = true;
     try {
-      const res = await fetch(`/api/v1/accounts/${ACCOUNT_ID}/videos/${id}`, {
-        method: 'DELETE', credentials: 'same-origin',
-        headers: { 'Accept': 'application/json' },
-      });
-      if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+      await api(`${API}/${id}`, { method: 'DELETE' });
       const card = document.querySelector(`.video-card[data-video-id="${id}"]`);
       if (card) card.remove();
       if (!document.querySelector('.video-card[data-video-id]')) window.location.reload();

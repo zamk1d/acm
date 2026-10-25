@@ -13,7 +13,12 @@ from acm.core.exceptions import (
     VideoNotFoundError,
 )
 from acm.db.uow import UnitOfWork
-from acm.integrations.youtube import download_youtube, validate_youtube_url
+from acm.integrations.youtube import (
+    VideoProbe,
+    download_youtube,
+    probe_youtube,
+    validate_youtube_url,
+)
 from acm.models.video import STARTABLE_STATUSES, Video, VideoStatus
 from acm.schemas.video import FragmentsOptions, ImportProgress, VideoRead
 from acm.storage import FileStorage
@@ -118,11 +123,30 @@ class StudioService:
             await self._storage.delete(stored.name)
             raise
 
-    async def start_import(self, user_id: uuid.UUID, account_id: int, *, url: str) -> VideoRead:
+    async def probe_url(
+        self, user_id: uuid.UUID, account_id: int, *, url: str
+    ) -> VideoProbe:
+        """Metadata only: title, duration, list of audio tracks. No download."""
+        async with self._uow_factory() as uow:
+            await uow.tiktok_accounts.require_for_user(user_id, account_id)
+        return await asyncio.to_thread(probe_youtube, url)
+
+    async def start_import(
+        self,
+        user_id: uuid.UUID,
+        account_id: int,
+        *,
+        url: str,
+        audio_language: str | None = None,
+        metadata_language: str | None = None,
+    ) -> VideoRead:
         """Begin a YouTube import in the background and return at once.
 
         A placeholder row (status "downloading") is created; a task fills it in when the file
         arrives. The UI polls `import_progress()`.
+
+        `audio_language` — BCP-47 code ("ru", "en-US"); selects the matching audio track.
+        `metadata_language` — same code; yt-dlp returns title/description in that language.
         """
         url = validate_youtube_url(url)
         async with self._uow_factory() as uow:
@@ -135,7 +159,14 @@ class StudioService:
             description="",
             status=VideoStatus.DOWNLOADING,
         )
-        task = asyncio.create_task(self._run_import(video.id, url))
+        task = asyncio.create_task(
+            self._run_import(
+                video.id,
+                url,
+                audio_language=audio_language,
+                metadata_language=metadata_language,
+            )
+        )
         _JOBS[video.id] = task  # module-level: this service object lives for one request only
         task.add_done_callback(lambda _t, vid=video.id: (_JOBS.pop(vid, None), _PROGRESS.pop(vid, None)))
         return video
@@ -157,7 +188,14 @@ class StudioService:
                 percent = 100 if video.status == VideoStatus.DRAFT.value else 0
             return ImportProgress(status=video.status, percent=percent, error=video.error)
 
-    async def _run_import(self, video_id: int, url: str) -> None:
+    async def _run_import(
+        self,
+        video_id: int,
+        url: str,
+        *,
+        audio_language: str | None = None,
+        metadata_language: str | None = None,
+    ) -> None:
         stem = self._storage.new_path("tmp").with_suffix("")
         name: str | None = None
         try:
@@ -168,6 +206,8 @@ class StudioService:
                     stem,
                     self._max_upload_bytes,
                     lambda fraction: _PROGRESS.__setitem__(video_id, fraction),
+                    audio_language=audio_language,
+                    metadata_language=metadata_language,
                 )
             name = result.path.name
             if result.path.suffix.removeprefix(".").lower() not in ALLOWED_EXTENSIONS:
@@ -183,7 +223,7 @@ class StudioService:
                 video.status = VideoStatus.DRAFT.value
                 video.error = None
                 await uow.commit()
-            logger.info("YouTube video imported video_id=%s", video_id)
+            logger.info("YouTube video imported video_id=%s lang=%s", video_id, audio_language)
         except AppError as exc:
             if name:
                 await self._storage.delete(name)

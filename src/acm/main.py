@@ -86,15 +86,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
          http=http,
      )
 
-     worker = asyncio.create_task(worker_loop(app.state.services))
+     worker = None
+     if settings.run_worker:
+         worker = asyncio.create_task(worker_loop(app.state.services))
+
      try:
          yield
      finally:
-         worker.cancel()
-         try:
-             await worker
-         except asyncio.CancelledError:
-             pass
+         if worker:
+             worker.cancel()
+             try:
+                 await worker
+             except asyncio.CancelledError:
+                 pass
          await http.aclose()
          await engine.dispose()
 

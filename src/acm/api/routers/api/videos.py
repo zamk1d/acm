@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
-
+from acm.schemas.video import VideoProbeRead, VideoUrlProbeRequest
 from acm.api.deps import CurrentUserId, StudioDep
 from acm.api.uploads import iter_upload
 from acm.core.exceptions import InvalidInputError, VideoNotFoundError
@@ -58,16 +58,16 @@ async def upload(
     )
 
 
-@router.post(
-    "/from-url",
-    response_model=VideoRead,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Start downloading a YouTube video (returns at once, poll /{id}/import)",
-)
-async def from_url(
-    account_id: int, user_id: CurrentUserId, service: StudioDep, body: VideoUrlRequest
-) -> VideoRead:
-    return await service.start_import(user_id, account_id, url=body.url)
+# @router.post(
+#     "/from-url",
+#     response_model=VideoRead,
+#     status_code=status.HTTP_202_ACCEPTED,
+#     summary="Start downloading a YouTube video (returns at once, poll /{id}/import)",
+# )
+# async def from_url(
+#     account_id: int, user_id: CurrentUserId, service: StudioDep, body: VideoUrlRequest
+# ) -> VideoRead:
+#     return await service.start_import(user_id, account_id, url=body.url)
 
 
 @router.get(
@@ -196,3 +196,35 @@ async def download_file(
     path = await service.get_file(user_id, account_id, video.file_name)
     media_type, _ = mimetypes.guess_type(path.name)
     return FileResponse(path, media_type=media_type or "application/octet-stream")
+
+@router.post(
+    "/probe-url",
+    response_model=VideoProbeRead,
+    summary="Inspect a YouTube URL: available audio tracks and title",
+)
+async def probe_url(
+    account_id: int,
+    user_id: CurrentUserId,
+    service: StudioDep,
+    body: VideoUrlProbeRequest,
+) -> VideoProbeRead:
+    probe = await service.probe_url(user_id, account_id, url=body.url)
+    return VideoProbeRead.model_validate(probe)
+
+
+@router.post(
+    "/from-url",
+    response_model=VideoRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Start downloading a YouTube video (returns at once, poll /{id}/import)",
+)
+async def from_url(
+    account_id: int, user_id: CurrentUserId, service: StudioDep, body: VideoUrlRequest
+) -> VideoRead:
+    return await service.start_import(
+        user_id,
+        account_id,
+        url=body.url,
+        audio_language=body.audio_language,
+        metadata_language=body.metadata_language,
+    )
