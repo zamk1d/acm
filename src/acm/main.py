@@ -104,9 +104,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
  app = FastAPI(
      title="ACM API",
+     description="API for managing TikTok accounts and publishing videos.",
      version="1.0.0",
-     description=DESCRIPTION,
-     openapi_tags=TAGS_METADATA,
+     openapi_tags=[
+         {"name": "Auth", "description": "Registration, login, and API tokens."},
+         {"name": "Accounts", "description": "Manage connected TikTok accounts."},
+         {"name": "Videos", "description": "Upload, trim, and manage local video library."},
+         {"name": "Publishing", "description": "Send videos to TikTok (direct post or drafts)."},
+         {"name": "Analytics", "description": "Fetch video statistics and channel metrics."},
+         {"name": "Scheduler", "description": "Manage auto-publishing plans and queues."},
+     ],
      lifespan=lifespan,
  )
  app.add_middleware(
